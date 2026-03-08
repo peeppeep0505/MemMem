@@ -1,4 +1,4 @@
-import { View, Text, Image, TextInput, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, Image, TextInput, TouchableOpacity } from "react-native";
 import { useState } from "react";
 import WebLayout from "../common/WebLayout";
 
@@ -28,9 +28,8 @@ export default function ProfilePage() {
   };
 
   const stats = [
-    { label: "Tasks Done", value: "128" },
-    { label: "This Week", value: "14" },
-    { label: "Streak", value: "7d" },
+    { label: "Friend", value: "14" },
+    { label: "Posts", value: "7" },
   ];
 
   return (
@@ -114,17 +113,6 @@ export default function ProfilePage() {
               )}
               <Text className="text-gray-400 text-sm mt-0.5">aemeath@email.com</Text>
 
-              {/* Tags */}
-              <View className="flex-row flex-wrap gap-2 mt-3">
-                {["Designer", "Developer", "Open to work"].map((tag) => (
-                  <View
-                    key={tag}
-                    className="px-3 py-1 rounded-full bg-pink-50 border border-pink-100"
-                  >
-                    <Text className="text-pink-600 text-xs font-medium">{tag}</Text>
-                  </View>
-                ))}
-              </View>
             </View>
 
             {/* Stats Row */}
@@ -169,9 +157,8 @@ export default function ProfilePage() {
           </View>
 
           {[
-            { icon: "🔔", label: "Notifications", hint: "Manage alerts" },
             { icon: "🔒", label: "Privacy & Security", hint: "Password, 2FA" },
-            { icon: "🎨", label: "Appearance", hint: "Theme, language" },
+            { icon: "🎨", label: "Appearance", hint: "Theme" },
           ].map((item, i, arr) => (
             <TouchableOpacity
               key={item.label}

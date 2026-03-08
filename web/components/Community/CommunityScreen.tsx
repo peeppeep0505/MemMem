@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, Image, ScrollView, TouchableOpacity } from "react-native";
 import WebLayout from "../common/WebLayout";
 import CreatePost from "./CreatePost";
+import { useRouter } from "expo-router";
 
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -41,15 +42,21 @@ const INITIAL_POSTS = [
 ];
 
 const FRIENDS = [
-  { username: "sarah_creates", avatar: "https://i.pravatar.cc/150?img=47", mutuals: 4 },
-  { username: "alex.travels",  avatar: "https://i.pravatar.cc/150?img=12", mutuals: 2 },
-  { username: "mia.journal",   avatar: "https://i.pravatar.cc/150?img=32", mutuals: 6 },
+  { username: "sarah_creates", avatar: "https://i.pravatar.cc/150?img=47", mutuals: 4, online: true },
+  { username: "alex.travels",  avatar: "https://i.pravatar.cc/150?img=12", mutuals: 2, online: false },
+  { username: "mia.journal",   avatar: "https://i.pravatar.cc/150?img=32", mutuals: 6, online: true },
+  { username: "tom.captures",  avatar: "https://i.pravatar.cc/150?img=53", mutuals: 1, online: false },
+  { username: "nina.ink",      avatar: "https://i.pravatar.cc/150?img=44", mutuals: 3, online: true },
+  { username: "leo.shoots",    avatar: "https://i.pravatar.cc/150?img=60", mutuals: 5, online: false },
 ];
 
 const FRIEND_REQUESTS = [
-  { username: "luna.frames", avatar: "https://i.pravatar.cc/150?img=5" },
+  { username: "luna.frames", avatar: "https://i.pravatar.cc/150?img=5"  },
   { username: "kai.wanders", avatar: "https://i.pravatar.cc/150?img=11" },
+  { username: "zoe.palette", avatar: "https://i.pravatar.cc/150?img=20" },
 ];
+
+const SIDEBAR_LIMIT = 3;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +76,7 @@ const sideCard: any = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function CommunityPage() {
+  const router = useRouter();
   const [posts, setPosts] = useState(INITIAL_POSTS);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [modalVisible, setModalVisible] = useState(false);
@@ -135,8 +143,8 @@ export default function CommunityPage() {
           <View style={{ flex: 1, minWidth: 0, maxWidth: 520 }}>
 
             {/* Header */}
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-              <View>
+            <View style={{flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <View style={{ }}>
                 <Text style={{ fontSize: 26, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 }}>
                   Community
                 </Text>
@@ -237,7 +245,6 @@ export default function CommunityPage() {
                 )}
               </View>
             )}
-
             {/* Posts */}
             {filteredPosts.map((post) => (
               <View
@@ -324,10 +331,22 @@ export default function CommunityPage() {
           </View>
 
           {/* ── RIGHT: Sidebar ─────────────────────────────────────── */}
-          <View style={{ width: 248, flexShrink: 0 }}>
+          <View
+            style={{
+              width: 248,
+              flexShrink: 0,
+              position: "sticky",
+              top: 0,
+              alignSelf: "flex-start",
+            } as any}
+          >
 
-            {/* My Profile */}
-            <View style={sideCard}>
+            {/* My Profile — clickable → /profile */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => router.push("/profile" as any)}
+              style={sideCard}
+            >
               <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a", marginBottom: 14 }}>
                 My Profile
               </Text>
@@ -343,7 +362,6 @@ export default function CommunityPage() {
                       borderColor: "#f1f5f9",
                     }}
                   />
-                  {/* Online dot */}
                   <View
                     style={{
                       position: "absolute",
@@ -364,7 +382,6 @@ export default function CommunityPage() {
                 <View
                   style={{
                     flexDirection: "row",
-                    gap: 0,
                     marginTop: 14,
                     paddingTop: 14,
                     borderTopWidth: 1,
@@ -373,10 +390,7 @@ export default function CommunityPage() {
                   }}
                 >
                   {[
-                    {
-                      label: "Posts",
-                      value: String(posts.filter((p) => p.username === MY_USERNAME).length),
-                    },
+                    { label: "Posts", value: String(posts.filter((p) => p.username === MY_USERNAME).length) },
                     { label: "Friends", value: String(FRIENDS.length) },
                   ].map((s, i) => (
                     <View
@@ -388,86 +402,131 @@ export default function CommunityPage() {
                         borderRightColor: "#f8fafc",
                       }}
                     >
-                      <Text style={{ fontSize: 17, fontWeight: "800", color: "#0f172a" }}>
-                        {s.value}
-                      </Text>
+                      <Text style={{ fontSize: 17, fontWeight: "800", color: "#0f172a" }}>{s.value}</Text>
                       <Text style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{s.label}</Text>
                     </View>
                   ))}
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
 
-            {/* Friends */}
+            {/* Friends — max 5, See all → /friends */}
             <View style={sideCard}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a" }}>Friends</Text>
-                <Text style={{ fontSize: 11, color: "#94a3b8" }}>{FRIENDS.length} total</Text>
+                <TouchableOpacity onPress={() => router.push("/friends" as any)}>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#94a3b8" }}>
+                    See all {FRIENDS.length}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {FRIENDS.map((f, i) => (
-                <View
+              {FRIENDS.slice(0, SIDEBAR_LIMIT).map((f, i) => (
+                <TouchableOpacity
                   key={f.username}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/profile/${f.username}` as any)}
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 10,
                     paddingVertical: 9,
-                    borderBottomWidth: i < FRIENDS.length - 1 ? 1 : 0,
+                    borderBottomWidth: i < Math.min(FRIENDS.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
                     borderBottomColor: "#f8fafc",
                   }}
                 >
-                  <Image
-                    source={{ uri: f.avatar }}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
-                      borderWidth: 1.5,
-                      borderColor: "#f1f5f9",
-                    }}
-                  />
+                  <View style={{ position: "relative" }}>
+                    <Image
+                      source={{ uri: f.avatar }}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        borderWidth: 1.5,
+                        borderColor: f.online ? "#22c55e" : "#f1f5f9",
+                      }}
+                    />
+                    {f.online && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          bottom: 0,
+                          right: 0,
+                          width: 10,
+                          height: 10,
+                          borderRadius: 5,
+                          backgroundColor: "#22c55e",
+                          borderWidth: 1.5,
+                          borderColor: "#fff",
+                        }}
+                      />
+                    )}
+                  </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontWeight: "600", color: "#0f172a" }}>
                       @{f.username}
                     </Text>
-                    <Text style={{ fontSize: 11, color: "#94a3b8" }}>{f.mutuals} mutual</Text>
+                    <Text style={{ fontSize: 11, color: "#94a3b8" }}>
+                      {f.online ? "Online" : `${f.mutuals} mutual`}
+                    </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
+
+              {FRIENDS.length > SIDEBAR_LIMIT && (
+                <TouchableOpacity
+                  onPress={() => router.push("/friends" as any)}
+                  style={{ marginTop: 10, alignItems: "center" }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#94a3b8" }}>
+                    +{FRIENDS.length - SIDEBAR_LIMIT} more friends
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Friend Requests */}
+            {/* Friend Requests — max 5, See all → /friends?tab=requests */}
             {requests.length > 0 && (
               <View style={sideCard}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                   <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a" }}>
                     Friend Requests
                   </Text>
-                  <View
-                    style={{
-                      backgroundColor: "#fce7f3",
-                      paddingHorizontal: 8,
-                      paddingVertical: 2,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#be185d" }}>
-                      {requests.length}
-                    </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View
+                      style={{
+                        backgroundColor: "#fce7f3",
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#be185d" }}>
+                        {requests.length}
+                      </Text>
+                    </View>
+                    {requests.length > SIDEBAR_LIMIT && (
+                      <TouchableOpacity onPress={() => router.push("/friends?tab=requests" as any)}>
+                        <Text style={{ fontSize: 11, fontWeight: "600", color: "#94a3b8" }}>See all</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
 
-                {requests.map((req, i) => (
+                {requests.slice(0, SIDEBAR_LIMIT).map((req, i) => (
                   <View
                     key={req.username}
                     style={{
                       paddingVertical: 10,
-                      borderBottomWidth: i < requests.length - 1 ? 1 : 0,
+                      borderBottomWidth: i < Math.min(requests.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
                       borderBottomColor: "#f8fafc",
                     }}
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => router.push(`/profile/${req.username}` as any)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}
+                    >
                       <Image
                         source={{ uri: req.avatar }}
                         style={{
@@ -481,7 +540,7 @@ export default function CommunityPage() {
                       <Text style={{ fontSize: 13, fontWeight: "600", color: "#0f172a", flex: 1 }}>
                         @{req.username}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={{ flexDirection: "row", gap: 8 }}>
                       <TouchableOpacity
                         onPress={() => handleRequest(req.username)}
