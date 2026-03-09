@@ -1,0 +1,10 @@
+const express = require("express")
+const router = express.Router()
+
+const authController = require("../controllers/authController")
+router.post("/register",authController.register)
+router.post("/login",authController.login)
+router.post("/change-password",authController.changePassword)
+router.delete("/soft-delete/:userId",authController.softDeleteUser)
+
+module.exports = router
