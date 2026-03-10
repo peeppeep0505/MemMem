@@ -46,33 +46,8 @@ export default function DiaryPage() {
                 {dateLabel}
               </Text>
             </View>
-
-            {/* New Entry Button */}
-            <TouchableOpacity
-              onPress={() => router.push("/diary/create" as any)}
-              style={{
-                backgroundColor: "#1a1a1a",
-                paddingHorizontal: 20,
-                paddingVertical: 12,
-                borderRadius: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <Text style={{ color: "#fff", fontSize: 18, lineHeight: 20, marginTop: -1 }}>+</Text>
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>New Entry</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Subtle divider */}
-          <View
-            className="mb-8"
-            style={{
-              height: 1,
-              backgroundColor: "#f0ece8",
-            }}
-          />
 
           {/* Calendar */}
           <DiaryCalendar />

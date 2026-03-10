@@ -1,6 +1,8 @@
 import { View, Text, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { logout } from "@/services/authService";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Sidebar() {
   const router = useRouter();
@@ -11,6 +13,12 @@ export default function Sidebar() {
     { label: "Todo List", icon: "checkbox-outline", path: "/todolist" },
     { label: "Profile", icon: "person-outline", path: "/profile" },
   ];
+  const { logout } = useAuth();
+
+    const handleLogout = async () => {
+      await logout();
+      router.replace("/");
+    };
 
   return (
     <View className="w-64 bg-white border-r border-gray-200 p-6 justify-between">
@@ -38,6 +46,7 @@ export default function Sidebar() {
 
       {/* Logout */}
       <TouchableOpacity
+        onPress={handleLogout}
         className="flex-row items-center p-3 rounded-xl border border-gray-200 hover:bg-red-50"
       >
         <Ionicons name="log-out-outline" size={20} color="#ef4444" />

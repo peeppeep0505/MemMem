@@ -1,6 +1,8 @@
-import { View, Text, Image, TextInput, TouchableOpacity } from "react-native";
+import { View, Text, Image, TextInput, TouchableOpacity, ScrollView } from "react-native";
 import { useState } from "react";
 import WebLayout from "../common/WebLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "expo-router";
 
 export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
@@ -10,6 +12,14 @@ export default function ProfilePage() {
   const [draftBio, setDraftBio] = useState(bio);
   const [name, setName] = useState("Aemeath");
   const [draftName, setDraftName] = useState(name);
+
+  const { logout } = useAuth();
+const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/");
+  };
 
   const handleEdit = () => {
     setDraftBio(bio);
@@ -34,12 +44,8 @@ export default function ProfilePage() {
 
   return (
     <WebLayout>
+      <ScrollView className="flex-1 px-4 py-6">
       <View className="max-w-2xl mx-auto w-full">
-
-        {/* Page Title */}
-        <Text className="text-4xl font-bold text-gray-900 tracking-tight mb-8">
-          My Profile
-        </Text>
 
         {/* Profile Card */}
         <View className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
@@ -175,11 +181,14 @@ export default function ProfilePage() {
         </View>
 
         {/* Sign Out */}
-        <TouchableOpacity className="mt-4 py-4 rounded-2xl border border-red-100 bg-red-50 items-center">
+        <TouchableOpacity className="mt-4 py-4 rounded-2xl border border-red-100 bg-red-50 items-center"
+          onPress={handleLogout}
+        >
           <Text className="text-red-400 text-sm font-semibold">Sign Out</Text>
         </TouchableOpacity>
 
       </View>
+      </ScrollView>
     </WebLayout>
   );
 }

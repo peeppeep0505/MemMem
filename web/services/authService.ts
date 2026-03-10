@@ -24,3 +24,10 @@ export const changePassword = (
     body: JSON.stringify({ userId, oldPassword, newPassword }),
   });
 };
+
+
+export const logout = () => {
+  return apiFetch("/auth/logout", {
+    method: "POST",
+  });
+};

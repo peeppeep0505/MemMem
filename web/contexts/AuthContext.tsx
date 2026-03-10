@@ -23,20 +23,28 @@ export const AuthProvider = ({ children }: any) => {
   const [user,setUser] = useState<User | null>(null);
   const [loading,setLoading] = useState(true);
 
+  
+
+  const loadUser = async () => {
+  try {
+    const storedUser = await AsyncStorage.getItem("@user");
+
+    if (storedUser && storedUser !== "undefined") {
+      setUser(JSON.parse(storedUser));
+    } else {
+      setUser(null);
+    }
+  } catch (err) {
+    console.log("loadUser error", err);
+    setUser(null);
+  }
+
+  setLoading(false);
+};
+
   useEffect(()=>{
     loadUser();
   },[]);
-
-  const loadUser = async () => {
-
-    const storedUser = await AsyncStorage.getItem("@user");
-
-    if(storedUser){
-      setUser(JSON.parse(storedUser));
-    }
-
-    setLoading(false);
-  };
 
   const login = async (email:string,password:string) => {
 
