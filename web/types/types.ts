@@ -1,6 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // types.ts  —  shared types across services, contexts, and components
 // ─────────────────────────────────────────────────────────────────────────────
+export type ProfileResponse = {
+  _id: string;
+  username?: string;
+  email?: string;
+  bio?: string;
+  profilePic?: string;
+  backgroundColor?: string;
+};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
