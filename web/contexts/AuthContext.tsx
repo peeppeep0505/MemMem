@@ -2,11 +2,14 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authService from "../services/authService";
 
-type User = {
+export interface User {
   _id: string;
-  email: string;
   username: string;
-};
+  email: string;
+  profilePic?: string;
+  backgroundColor?: string;
+  friends?: string[];
+}
 
 type AuthContextType = {
   user: User | null;

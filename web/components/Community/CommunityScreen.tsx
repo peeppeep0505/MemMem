@@ -1,64 +1,118 @@
-import { useState } from "react";
-import { View, Text, Image, ScrollView, TouchableOpacity } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  useWindowDimensions,
+} from "react-native";
 import WebLayout from "../common/WebLayout";
 import CreatePost from "./CreatePost";
 import { useRouter } from "expo-router";
+import { useAuth } from "@/contexts/AuthContext";
+import type { Post } from "@/types/types";
+import ConfirmDialog from "../common/dialog/ConfirmDialog";
+import {
+  deletePost,
+  getFriendPosts,
+  getMyPosts,
+  likePost,
+} from "@/services/postService";
+import { getProfile } from "@/services/profileService";
 
-
-// ─── Data ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type FeedFilter = "friends" | "mine";
 
-const MY_USERNAME = "you";
+type FriendSidebarItem = {
+  username: string;
+  avatar: string;
+  mutuals: number;
+  online: boolean;
+};
 
-const INITIAL_POSTS = [
-  {
-    id: 1,
-    username: "sarah_creates",
-    avatar: "https://i.pravatar.cc/150?img=47",
-    image: "https://picsum.photos/seed/morning/600/400",
-    caption: "Golden hour never disappoints 🌅",
-    likes: 142,
-    time: "2h ago",
-  },
-  {
-    id: 2,
-    username: "alex.travels",
-    avatar: "https://i.pravatar.cc/150?img=12",
-    image: "https://picsum.photos/seed/city/600/400",
-    caption: "Lost in the city streets 🏙️",
-    likes: 89,
-    time: "5h ago",
-  },
-  {
-    id: 3,
-    username: "mia.journal",
-    avatar: "https://i.pravatar.cc/150?img=32",
-    image: "https://picsum.photos/seed/cafe/600/400",
-    caption: "Coffee & quiet mornings ☕",
-    likes: 204,
-    time: "1d ago",
-  },
-];
+type FriendRequestItem = {
+  username: string;
+  avatar: string;
+};
 
-const FRIENDS = [
-  { username: "sarah_creates", avatar: "https://i.pravatar.cc/150?img=47", mutuals: 4, online: true },
-  { username: "alex.travels",  avatar: "https://i.pravatar.cc/150?img=12", mutuals: 2, online: false },
-  { username: "mia.journal",   avatar: "https://i.pravatar.cc/150?img=32", mutuals: 6, online: true },
-  { username: "tom.captures",  avatar: "https://i.pravatar.cc/150?img=53", mutuals: 1, online: false },
-  { username: "nina.ink",      avatar: "https://i.pravatar.cc/150?img=44", mutuals: 3, online: true },
-  { username: "leo.shoots",    avatar: "https://i.pravatar.cc/150?img=60", mutuals: 5, online: false },
-];
-
-const FRIEND_REQUESTS = [
-  { username: "luna.frames", avatar: "https://i.pravatar.cc/150?img=5"  },
-  { username: "kai.wanders", avatar: "https://i.pravatar.cc/150?img=11" },
-  { username: "zoe.palette", avatar: "https://i.pravatar.cc/150?img=20" },
-];
+type LoadedProfile = {
+  _id?: string;
+  username?: string;
+  email?: string;
+  bio?: string;
+  profilePic?: string;
+  backgroundColor?: string;
+  friends?: string[];
+};
 
 const SIDEBAR_LIMIT = 3;
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
+const UPLOAD_BASE = API_BASE_URL.replace(/\/api$/, "");
+
+function normalizeUri(value?: string) {
+  if (!value) return "";
+  return String(value).trim();
+}
+
+function getImageUri(path?: string) {
+  const cleanPath = normalizeUri(path);
+  if (!cleanPath) return "";
+
+  if (cleanPath.startsWith("http")) return cleanPath;
+  if (cleanPath.startsWith("data:image")) return cleanPath;
+
+  return `${UPLOAD_BASE}/uploads/${cleanPath}`;
+}
+
+function getAvatarForPost(post: Post, latestProfile?: LoadedProfile, authUser?: any) {
+  const postAvatar = getImageUri(post.user?.profilePic);
+  if (postAvatar) return postAvatar;
+
+  const isMine = String(post.userId || "") === String(authUser?._id || "");
+  if (isMine) {
+    const latestMineAvatar = getImageUri(latestProfile?.profilePic || "");
+    if (latestMineAvatar) return latestMineAvatar;
+
+    const authAvatar = getImageUri(authUser?.profilePic || "");
+    if (authAvatar) return authAvatar;
+  }
+
+  return "";
+}
+
+function normalizeImages(images?: string[]) {
+  if (!Array.isArray(images)) return [];
+  return images
+    .filter(Boolean)
+    .map((img) => String(img).trim())
+    .filter((img) => img.length > 0);
+}
+
+function formatTime(date?: string) {
+  if (!date) return "Just now";
+
+  const diffMs = Date.now() - new Date(date).getTime();
+  const diffMin = Math.floor(diffMs / 1000 / 60);
+
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const sideCard: any = {
   backgroundColor: "#fff",
@@ -73,53 +127,138 @@ const sideCard: any = {
   marginBottom: 16,
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CommunityPage() {
   const router = useRouter();
-  const [posts, setPosts] = useState(INITIAL_POSTS);
-  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const { user } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const [posts, setPosts] = useState<Post[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [filter, setFilter] = useState<FeedFilter>("friends");
-  const [requests, setRequests] = useState(FRIEND_REQUESTS);
+  const [loading, setLoading] = useState(true);
 
-  const toggleLike = (id: number) => {
-    setLikedPosts((prev) => {
-      const next = new Set(prev);
-      const wasLiked = next.has(id);
-      wasLiked ? next.delete(id) : next.add(id);
-      setPosts((p) =>
-        p.map((post) =>
-          post.id === id
-            ? { ...post, likes: post.likes + (wasLiked ? -1 : 1) }
-            : post
-        )
-      );
-      return next;
-    });
-  };
+  const [friends, setFriends] = useState<FriendSidebarItem[]>([]);
+  const [requests, setRequests] = useState<FriendRequestItem[]>([]);
 
-  const handleAddPost = (caption: string) => {
-    const newPost = {
-      id: Date.now(),
-      username: MY_USERNAME,
-      avatar: "https://i.pravatar.cc/150?img=68",
-      image: `https://picsum.photos/seed/${Date.now()}/600/400`,
-      caption,
-      likes: 0,
-      time: "Just now",
-    };
-    setPosts([newPost, ...posts]);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [selectedDeleteId, setSelectedDeleteId] = useState<string | null>(null);
+
+  const [profile, setProfile] = useState<LoadedProfile | null>(null);
+  const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
+  const [myProfileBroken, setMyProfileBroken] = useState(false);
+
+  const userId = user?._id || "";
+  const myDisplayName = profile?.username || user?.username || "you";
+  const myAvatar =
+    getImageUri(profile?.profilePic || "") ||
+    getImageUri((user as any)?.profilePic || "");
+
+  const postImageWidth = useMemo(() => {
+    if (windowWidth <= 768) {
+      return Math.max(280, windowWidth - 64);
+    }
+    return 518;
+  }, [windowWidth]);
+
+  const loadProfile = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const latestProfile = await getProfile(userId);
+      setProfile(latestProfile);
+    } catch (error) {
+      console.error("loadProfile error:", error);
+    }
+  }, [userId]);
+
+  const loadPosts = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      setLoading(true);
+
+      const [friendPosts, myPosts] = await Promise.all([
+        getFriendPosts(userId),
+        getMyPosts(userId),
+      ]);
+
+      const merged = [
+        ...(Array.isArray(friendPosts) ? friendPosts : []),
+        ...(Array.isArray(myPosts) ? myPosts : []),
+      ];
+
+      merged.sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      setPosts(merged);
+    } catch (error) {
+      console.error("loadPosts error:", error);
+      Alert.alert("Error", "Failed to load posts");
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadProfile();
+    loadPosts();
+  }, [loadProfile, loadPosts]);
+
+  const handleAddPost = (newPost: Post) => {
+    setPosts((prev) => [newPost, ...prev]);
+    setFilter("mine");
   };
 
   const handleRequest = (username: string) => {
     setRequests((r) => r.filter((req) => req.username !== username));
   };
 
-  const filteredPosts =
-    filter === "mine"
-      ? posts.filter((p) => p.username === MY_USERNAME)
-      : posts.filter((p) => p.username !== MY_USERNAME);
+  const toggleLike = async (postId: string) => {
+    if (!userId) return;
+
+    try {
+      const updated = await likePost(postId, userId);
+      setPosts((prev) =>
+        prev.map((post) => (post._id === postId ? updated : post))
+      );
+    } catch (error) {
+      console.error("toggleLike error:", error);
+      Alert.alert("Error", "Failed to like post");
+    }
+  };
+
+  const filteredPosts = useMemo(() => {
+    if (filter === "mine") {
+      return posts.filter((p) => String(p.userId) === String(userId));
+    }
+    return posts.filter((p) => String(p.userId) !== String(userId));
+  }, [filter, posts, userId]);
+
+  const myPostCount = useMemo(
+    () => posts.filter((p) => String(p.userId) === String(userId)).length,
+    [posts, userId]
+  );
+
+  if (loading) {
+    return (
+      <WebLayout>
+        <View
+          style={{
+            flex: 1,
+            minHeight: 400,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ActivityIndicator size="large" />
+        </View>
+      </WebLayout>
+    );
+  }
 
   return (
     <WebLayout>
@@ -138,14 +277,25 @@ export default function CommunityPage() {
             width: "100%",
           }}
         >
-
           {/* ── LEFT: Feed ─────────────────────────────────────────── */}
           <View style={{ flex: 1, minWidth: 0, maxWidth: 520 }}>
-
-            {/* Header */}
-            <View style={{flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-              <View style={{ }}>
-                <Text style={{ fontSize: 26, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 20,
+              }}
+            >
+              <View>
+                <Text
+                  style={{
+                    fontSize: 26,
+                    fontWeight: "800",
+                    color: "#0f172a",
+                    letterSpacing: -0.5,
+                  }}
+                >
                   Community
                 </Text>
                 <Text style={{ fontSize: 13, color: "#94a3b8", marginTop: 2 }}>
@@ -169,12 +319,17 @@ export default function CommunityPage() {
                   shadowRadius: 8,
                 }}
               >
-                <Text style={{ color: "#fff", fontSize: 17, lineHeight: 20 }}>+</Text>
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>New Post</Text>
+                <Text style={{ color: "#fff", fontSize: 17, lineHeight: 20 }}>
+                  +
+                </Text>
+                <Text
+                  style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}
+                >
+                  New Post
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Filter Tabs */}
             <View
               style={{
                 flexDirection: "row",
@@ -198,8 +353,10 @@ export default function CommunityPage() {
                     paddingHorizontal: 16,
                     paddingVertical: 8,
                     borderRadius: 10,
-                    backgroundColor: filter === tab.value ? "#fff" : "transparent",
-                    shadowColor: filter === tab.value ? "#94a3b8" : "transparent",
+                    backgroundColor:
+                      filter === tab.value ? "#fff" : "transparent",
+                    shadowColor:
+                      filter === tab.value ? "#94a3b8" : "transparent",
                     shadowOffset: { width: 0, height: 1 },
                     shadowOpacity: 0.1,
                     shadowRadius: 4,
@@ -218,16 +375,16 @@ export default function CommunityPage() {
               ))}
             </View>
 
-            {/* Empty state */}
             {filteredPosts.length === 0 && (
               <View style={{ alignItems: "center", paddingVertical: 64 }}>
                 <Text style={{ fontSize: 32, marginBottom: 10 }}>✦</Text>
                 <Text style={{ fontSize: 14, color: "#94a3b8" }}>
                   {filter === "mine"
                     ? "You haven't posted anything yet"
-                    : "No posts from friends yet"}
+                    : "You haven't posted anything yet"}
                 </Text>
-                {filter === "mine" && (
+
+                {filter === "mine" ? (
                   <TouchableOpacity
                     onPress={() => setModalVisible(true)}
                     style={{
@@ -238,96 +395,236 @@ export default function CommunityPage() {
                       backgroundColor: "#0f172a",
                     }}
                   >
-                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontWeight: "600",
+                        fontSize: 13,
+                      }}
+                    >
                       Create your first post
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => router.push("/friend" as any)}
+                    style={{
+                      marginTop: 14,
+                      paddingHorizontal: 20,
+                      paddingVertical: 10,
+                      borderRadius: 100,
+                      backgroundColor: "#0f172a",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontWeight: "600",
+                        fontSize: 13,
+                      }}
+                    >
+                      Add Friend
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
             )}
-            {/* Posts */}
-            {filteredPosts.map((post) => (
-              <View
-                key={post.id}
-                style={{
-                  backgroundColor: "#fff",
-                  borderRadius: 20,
-                  marginBottom: 18,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "#f1f5f9",
-                  shadowColor: "#94a3b8",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.07,
-                  shadowRadius: 10,
-                }}
-              >
-                {/* Post header */}
-                <View style={{ flexDirection: "row", alignItems: "center", padding: 14, gap: 10 }}>
-                  <Image
-                    source={{ uri: post.avatar }}
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 19,
-                      borderWidth: 2,
-                      borderColor: "#f1f5f9",
-                    }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "700", fontSize: 14, color: "#0f172a" }}>
-                      @{post.username}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: "#94a3b8" }}>{post.time}</Text>
-                  </View>
-                  <TouchableOpacity style={{ padding: 4 }}>
-                    <Text style={{ color: "#cbd5e1", fontSize: 18, letterSpacing: 1 }}>···</Text>
-                  </TouchableOpacity>
-                </View>
 
-                {/* Post image */}
-                <Image
-                  source={{ uri: post.image }}
-                  style={{ width: "100%", height: 220 }}
-                  resizeMode="cover"
-                />
+            {filteredPosts.map((post) => {
+              const avatar = getAvatarForPost(post, profile || undefined, user);
+              const avatarKey = post._id;
+              const showFallbackAvatar = !avatar || brokenAvatars[avatarKey];
+              const username = post.user?.username || "unknown";
+              const isMine = String(post.userId) === String(userId);
+              const postImages = normalizeImages(post.images);
 
-                {/* Post footer */}
-                <View style={{ padding: 14 }}>
-                  <Text style={{ fontSize: 14, color: "#334155", marginBottom: 14, lineHeight: 21 }}>
-                    {post.caption}
-                  </Text>
-
+              return (
+                <View
+                  key={post._id}
+                  style={{
+                    backgroundColor: "#fff",
+                    borderRadius: 20,
+                    marginBottom: 18,
+                    overflow: "hidden",
+                    borderWidth: 1,
+                    borderColor: "#f1f5f9",
+                    shadowColor: "#94a3b8",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.07,
+                    shadowRadius: 10,
+                  }}
+                >
                   <View
                     style={{
-                      paddingTop: 12,
-                      borderTopWidth: 1,
-                      borderTopColor: "#f8fafc",
                       flexDirection: "row",
                       alignItems: "center",
+                      padding: 14,
+                      gap: 10,
                     }}
                   >
-                    <TouchableOpacity
-                      onPress={() => toggleLike(post.id)}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-                    >
-                      <Text style={{ fontSize: 20 }}>
-                        {likedPosts.has(post.id) ? "❤️" : "🤍"}
-                      </Text>
-                      <Text
+                    {showFallbackAvatar ? (
+                      <View
                         style={{
-                          fontSize: 13,
-                          fontWeight: "600",
-                          color: likedPosts.has(post.id) ? "#e11d48" : "#94a3b8",
+                          width: 38,
+                          height: 38,
+                          borderRadius: 19,
+                          borderWidth: 2,
+                          borderColor: "#f1f5f9",
+                          backgroundColor: "#e2e8f0",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
                       >
-                        {post.likes}
+                        <Text
+                          style={{
+                            color: "#475569",
+                            fontSize: 13,
+                            fontWeight: "700",
+                          }}
+                        >
+                          {(username || "U").charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: avatar }}
+                        onError={() =>
+                          setBrokenAvatars((prev) => ({
+                            ...prev,
+                            [avatarKey]: true,
+                          }))
+                        }
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 19,
+                          borderWidth: 2,
+                          borderColor: "#f1f5f9",
+                          backgroundColor: "#e2e8f0",
+                        }}
+                      />
+                    )}
+
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontWeight: "700",
+                          fontSize: 14,
+                          color: "#0f172a",
+                        }}
+                      >
+                        @{username}
                       </Text>
-                    </TouchableOpacity>
+                      <Text style={{ fontSize: 12, color: "#94a3b8" }}>
+                        {formatTime(post.createdAt)}
+                      </Text>
+                    </View>
+
+                    {isMine ? (
+                      <TouchableOpacity
+                        style={{ padding: 4 }}
+                        onPress={() => {
+                          setSelectedDeleteId(post._id);
+                          setConfirmVisible(true);
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: "#ef4444",
+                            fontSize: 16,
+                            fontWeight: "700",
+                          }}
+                        >
+                          ✕
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity style={{ padding: 4 }}>
+                        <Text
+                          style={{
+                            color: "#cbd5e1",
+                            fontSize: 18,
+                            letterSpacing: 1,
+                          }}
+                        >
+                          ···
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {postImages.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      {postImages.map((img, index) => (
+                        <Image
+                          key={`${post._id}-${index}`}
+                          source={{ uri: getImageUri(img) }}
+                          style={{
+                            width: postImageWidth,
+                            height: 220,
+                            backgroundColor: "#f8fafc",
+                          }}
+                          resizeMode="cover"
+                        />
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  <View style={{ padding: 14 }}>
+                    {!!post.text && (
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          color: "#334155",
+                          marginBottom: 14,
+                          lineHeight: 21,
+                        }}
+                      >
+                        {post.text}
+                      </Text>
+                    )}
+
+                    <View
+                      style={{
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderTopColor: "#f8fafc",
+                        flexDirection: "row",
+                        alignItems: "center",
+                      }}
+                    >
+                      <TouchableOpacity
+                        onPress={() => toggleLike(post._id)}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 20 }}>
+                          {post.likes?.includes(userId) ? "❤️" : "🤍"}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "600",
+                            color: post.likes?.includes(userId)
+                              ? "#e11d48"
+                              : "#94a3b8",
+                          }}
+                        >
+                          {post.likes?.length || 0}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
           {/* ── RIGHT: Sidebar ─────────────────────────────────────── */}
@@ -340,28 +637,61 @@ export default function CommunityPage() {
               alignSelf: "flex-start",
             } as any}
           >
-
-            {/* My Profile — clickable → /profile */}
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => router.push("/profile" as any)}
               style={sideCard}
             >
-              <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a", marginBottom: 14 }}>
+              <Text
+                style={{
+                  fontWeight: "700",
+                  fontSize: 13,
+                  color: "#0f172a",
+                  marginBottom: 14,
+                }}
+              >
                 My Profile
               </Text>
               <View style={{ alignItems: "center" }}>
                 <View style={{ position: "relative", marginBottom: 10 }}>
-                  <Image
-                    source={{ uri: "https://i.pravatar.cc/150?img=68" }}
-                    style={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: 30,
-                      borderWidth: 3,
-                      borderColor: "#f1f5f9",
-                    }}
-                  />
+                  {myAvatar && !myProfileBroken ? (
+                    <Image
+                      source={{ uri: myAvatar }}
+                      onError={() => setMyProfileBroken(true)}
+                      style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: 30,
+                        borderWidth: 3,
+                        borderColor: "#f1f5f9",
+                        backgroundColor: "#e2e8f0",
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: 30,
+                        borderWidth: 3,
+                        borderColor: "#f1f5f9",
+                        backgroundColor: "#e2e8f0",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "#475569",
+                          fontSize: 18,
+                          fontWeight: "700",
+                        }}
+                      >
+                        {(myDisplayName || "U").charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+
                   <View
                     style={{
                       position: "absolute",
@@ -376,8 +706,16 @@ export default function CommunityPage() {
                     }}
                   />
                 </View>
-                <Text style={{ fontWeight: "700", fontSize: 15, color: "#0f172a" }}>John Doe</Text>
-                <Text style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>@you</Text>
+
+                <Text
+                  style={{
+                    fontWeight: "700",
+                    fontSize: 15,
+                    color: "#0f172a",
+                  }}
+                >
+                  {myDisplayName}
+                </Text>
 
                 <View
                   style={{
@@ -390,8 +728,8 @@ export default function CommunityPage() {
                   }}
                 >
                   {[
-                    { label: "Posts", value: String(posts.filter((p) => p.username === MY_USERNAME).length) },
-                    { label: "Friends", value: String(FRIENDS.length) },
+                    { label: "Posts", value: String(myPostCount) },
+                    { label: "Friends", value: String(friends.length) },
                   ].map((s, i) => (
                     <View
                       key={s.label}
@@ -402,26 +740,62 @@ export default function CommunityPage() {
                         borderRightColor: "#f8fafc",
                       }}
                     >
-                      <Text style={{ fontSize: 17, fontWeight: "800", color: "#0f172a" }}>{s.value}</Text>
-                      <Text style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{s.label}</Text>
+                      <Text
+                        style={{
+                          fontSize: 17,
+                          fontWeight: "800",
+                          color: "#0f172a",
+                        }}
+                      >
+                        {s.value}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: "#94a3b8",
+                          marginTop: 2,
+                        }}
+                      >
+                        {s.label}
+                      </Text>
                     </View>
                   ))}
                 </View>
               </View>
             </TouchableOpacity>
 
-            {/* Friends — max 5, See all → /friends */}
             <View style={sideCard}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a" }}>Friends</Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 14,
+                }}
+              >
+                <Text
+                  style={{
+                    fontWeight: "700",
+                    fontSize: 13,
+                    color: "#0f172a",
+                  }}
+                >
+                  Friends
+                </Text>
                 <TouchableOpacity onPress={() => router.push("/friends" as any)}>
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#94a3b8" }}>
-                    See all {FRIENDS.length}
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    See all {friends.length}
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              {FRIENDS.slice(0, SIDEBAR_LIMIT).map((f, i) => (
+              {friends.slice(0, SIDEBAR_LIMIT).map((f, i) => (
                 <TouchableOpacity
                   key={f.username}
                   activeOpacity={0.7}
@@ -431,7 +805,8 @@ export default function CommunityPage() {
                     alignItems: "center",
                     gap: 10,
                     paddingVertical: 9,
-                    borderBottomWidth: i < Math.min(FRIENDS.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
+                    borderBottomWidth:
+                      i < Math.min(friends.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
                     borderBottomColor: "#f8fafc",
                   }}
                 >
@@ -463,7 +838,13 @@ export default function CommunityPage() {
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: "#0f172a" }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: "#0f172a",
+                      }}
+                    >
                       @{f.username}
                     </Text>
                     <Text style={{ fontSize: 11, color: "#94a3b8" }}>
@@ -473,26 +854,50 @@ export default function CommunityPage() {
                 </TouchableOpacity>
               ))}
 
-              {FRIENDS.length > SIDEBAR_LIMIT && (
+              {friends.length > SIDEBAR_LIMIT && (
                 <TouchableOpacity
                   onPress={() => router.push("/friends" as any)}
                   style={{ marginTop: 10, alignItems: "center" }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#94a3b8" }}>
-                    +{FRIENDS.length - SIDEBAR_LIMIT} more friends
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    +{friends.length - SIDEBAR_LIMIT} more friends
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Friend Requests — max 5, See all → /friends?tab=requests */}
             {requests.length > 0 && (
               <View style={sideCard}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <Text style={{ fontWeight: "700", fontSize: 13, color: "#0f172a" }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 14,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontWeight: "700",
+                      fontSize: 13,
+                      color: "#0f172a",
+                    }}
+                  >
                     Friend Requests
                   </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
                     <View
                       style={{
                         backgroundColor: "#fce7f3",
@@ -501,13 +906,31 @@ export default function CommunityPage() {
                         borderRadius: 10,
                       }}
                     >
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#be185d" }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: "#be185d",
+                        }}
+                      >
                         {requests.length}
                       </Text>
                     </View>
                     {requests.length > SIDEBAR_LIMIT && (
-                      <TouchableOpacity onPress={() => router.push("/friends?tab=requests" as any)}>
-                        <Text style={{ fontSize: 11, fontWeight: "600", color: "#94a3b8" }}>See all</Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          router.push("/friends?tab=requests" as any)
+                        }
+                      >
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "600",
+                            color: "#94a3b8",
+                          }}
+                        >
+                          See all
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -518,14 +941,20 @@ export default function CommunityPage() {
                     key={req.username}
                     style={{
                       paddingVertical: 10,
-                      borderBottomWidth: i < Math.min(requests.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
+                      borderBottomWidth:
+                        i < Math.min(requests.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
                       borderBottomColor: "#f8fafc",
                     }}
                   >
                     <TouchableOpacity
                       activeOpacity={0.7}
                       onPress={() => router.push(`/profile/${req.username}` as any)}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                        marginBottom: 10,
+                      }}
                     >
                       <Image
                         source={{ uri: req.avatar }}
@@ -537,7 +966,14 @@ export default function CommunityPage() {
                           borderColor: "#f1f5f9",
                         }}
                       />
-                      <Text style={{ fontSize: 13, fontWeight: "600", color: "#0f172a", flex: 1 }}>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: "#0f172a",
+                          flex: 1,
+                        }}
+                      >
                         @{req.username}
                       </Text>
                     </TouchableOpacity>
@@ -552,7 +988,15 @@ export default function CommunityPage() {
                           alignItems: "center",
                         }}
                       >
-                        <Text style={{ fontSize: 12, fontWeight: "600", color: "#fff" }}>Accept</Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "600",
+                            color: "#fff",
+                          }}
+                        >
+                          Accept
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleRequest(req.username)}
@@ -564,23 +1008,54 @@ export default function CommunityPage() {
                           alignItems: "center",
                         }}
                       >
-                        <Text style={{ fontSize: 12, fontWeight: "600", color: "#64748b" }}>Decline</Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "600",
+                            color: "#64748b",
+                          }}
+                        >
+                          Decline
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 ))}
               </View>
             )}
-
           </View>
         </View>
       </ScrollView>
 
-      {/* Create Post Modal — centered popup */}
       <CreatePost
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onSubmit={handleAddPost}
+      />
+
+      <ConfirmDialog
+        visible={confirmVisible}
+        title="Delete Post"
+        message="Are you sure you want to delete this post?"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onCancel={() => {
+          setConfirmVisible(false);
+          setSelectedDeleteId(null);
+        }}
+        onConfirm={async () => {
+          if (!selectedDeleteId) return;
+
+          try {
+            await deletePost(selectedDeleteId);
+            setPosts((prev) => prev.filter((p) => p._id !== selectedDeleteId));
+          } catch (error) {
+            Alert.alert("Error", "Failed to delete post");
+          } finally {
+            setConfirmVisible(false);
+            setSelectedDeleteId(null);
+          }
+        }}
       />
     </WebLayout>
   );

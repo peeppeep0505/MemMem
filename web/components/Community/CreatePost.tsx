@@ -1,34 +1,148 @@
-import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal, Pressable, ScrollView } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Modal,
+  Pressable,
+  ScrollView,
+  Image,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { useAuth } from "@/contexts/AuthContext";
+import { createPost } from "@/services/postService";
+import { getProfile } from "@/services/profileService";
+import type { Post } from "@/types/types";
 
 interface CreatePostModalProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (caption: string) => void;
+  onSubmit: (post: Post) => void;
 }
 
-export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePostModalProps) {
-  const [caption, setCaption] = useState("");
+type LoadedProfile = {
+  _id?: string;
+  username?: string;
+  email?: string;
+  bio?: string;
+  profilePic?: string;
+  backgroundColor?: string;
+  friends?: string[];
+};
 
-  const handleSubmit = () => {
-    if (!caption.trim()) return;
-    onSubmit(caption.trim());
-    setCaption("");
-    onClose();
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || "http://localhost:5000/api";
+const UPLOAD_BASE = API_BASE_URL.replace(/\/api$/, "");
+
+function normalizeUri(value?: string) {
+  if (!value) return "";
+  return String(value).trim();
+}
+
+function getImageUri(path?: string) {
+  const cleanPath = normalizeUri(path);
+  if (!cleanPath) return "";
+
+  if (cleanPath.startsWith("http")) return cleanPath;
+  if (cleanPath.startsWith("data:image")) return cleanPath;
+
+  return `${UPLOAD_BASE}/uploads/${cleanPath}`;
+}
+
+export default function CreatePostModal({
+  visible,
+  onClose,
+  onSubmit,
+}: CreatePostModalProps) {
+  const { user } = useAuth();
+
+  const [caption, setCaption] = useState("");
+  const [images, setImages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  const [profile, setProfile] = useState<LoadedProfile | null>(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!visible || !user?._id) return;
+
+      try {
+        const latestProfile = await getProfile(user._id);
+        setProfile(latestProfile);
+        setAvatarError(false);
+      } catch (error) {
+        console.error("loadProfile error:", error);
+      }
+    };
+
+    loadProfile();
+  }, [visible, user?._id]);
+
+  const myAvatar = useMemo(() => {
+    return (
+      getImageUri(profile?.profilePic || "") ||
+      getImageUri((user as any)?.profilePic || "")
+    );
+  }, [profile?.profilePic, user]);
+
+  const displayUsername = profile?.username || user?.username || "you";
+
+  const pickImages = async () => {
+    const remain = 4 - images.length;
+
+    if (remain <= 0) {
+      Alert.alert("You can upload up to 4 images only");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: remain,
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const selected = result.assets || [];
+    setImages((prev) => [...prev, ...selected].slice(0, 4));
+  };
+
+  const removeImage = (index: number) => {
+    setImages((prev) => prev.filter((_: any, i: number) => i !== index));
+  };
+
+  const handleSubmit = async () => {
+    if (!user?._id) return;
+    if (!caption.trim() && images.length === 0) return;
+
+    try {
+      setLoading(true);
+      const created = await createPost(user._id, caption.trim(), images);
+      onSubmit(created);
+      setCaption("");
+      setImages([]);
+      onClose();
+    } catch (error: any) {
+      Alert.alert("Create post failed", error?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
+    if (loading) return;
     setCaption("");
+    setImages([]);
+    setAvatarError(false);
     onClose();
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={handleClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <Pressable
         onPress={handleClose}
         style={{
@@ -53,10 +167,23 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
             shadowRadius: 40,
           }}
         >
-          {/* Header */}
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 24,
+            }}
+          >
             <View>
-              <Text style={{ fontSize: 20, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 }}>
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: "800",
+                  color: "#0f172a",
+                  letterSpacing: -0.5,
+                }}
+              >
                 Create Post
               </Text>
               <Text style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>
@@ -78,8 +205,14 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
             </TouchableOpacity>
           </View>
 
-          {/* Author row */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 16,
+            }}
+          >
             <View
               style={{
                 width: 38,
@@ -88,21 +221,33 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
                 overflow: "hidden",
                 borderWidth: 2,
                 borderColor: "#f1f5f9",
+                backgroundColor: "#f8fafc",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <img
-                src="https://i.pravatar.cc/150?img=68"
-                style={{ width: 38, height: 38, objectFit: "cover" }}
-                alt="avatar"
-              />
+              {myAvatar && !avatarError ? (
+                <Image
+                  source={{ uri: myAvatar }}
+                  onError={() => setAvatarError(true)}
+                  style={{ width: 38, height: 38 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={{ color: "#475569", fontSize: 13, fontWeight: "700" }}>
+                  {displayUsername.charAt(0).toUpperCase()}
+                </Text>
+              )}
             </View>
+
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}>@you</Text>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: "#0f172a" }}>
+                @{displayUsername}
+              </Text>
               <Text style={{ fontSize: 11, color: "#94a3b8" }}>Posting to Friends</Text>
             </View>
           </View>
 
-          {/* Caption input */}
           <TextInput
             value={caption}
             onChangeText={setCaption}
@@ -124,12 +269,19 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
               outline: "none",
             } as any}
           />
-          <Text style={{ fontSize: 11, color: "#cbd5e1", textAlign: "right", marginBottom: 20 }}>
+          <Text
+            style={{
+              fontSize: 11,
+              color: "#cbd5e1",
+              textAlign: "right",
+              marginBottom: 20,
+            }}
+          >
             {caption.length} / 300
           </Text>
 
-          {/* Add photo hint */}
           <TouchableOpacity
+            onPress={pickImages}
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -141,14 +293,49 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
               borderColor: "#f1f5f9",
               borderStyle: "dashed",
               backgroundColor: "#fafafa",
-              marginBottom: 20,
+              marginBottom: 14,
             }}
           >
             <Text style={{ fontSize: 16 }}>🖼</Text>
-            <Text style={{ fontSize: 13, color: "#94a3b8" }}>Add a photo</Text>
+            <Text style={{ fontSize: 13, color: "#94a3b8" }}>
+              Add a photo {images.length > 0 ? `(${images.length}/4)` : ""}
+            </Text>
           </TouchableOpacity>
 
-          {/* Actions */}
+          {images.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+              {images.map((img: any, index: number) => (
+                <View key={`${img.uri}-${index}`} style={{ marginRight: 10, position: "relative" }}>
+                  <Image
+                    source={{ uri: img.uri }}
+                    style={{
+                      width: 88,
+                      height: 88,
+                      borderRadius: 14,
+                      backgroundColor: "#f1f5f9",
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => removeImage(index)}
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: "rgba(15,23,42,0.8)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 12 }}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
           <View style={{ flexDirection: "row", gap: 10 }}>
             <TouchableOpacity
               onPress={handleClose}
@@ -161,22 +348,39 @@ export default function CreatePostModal({ visible, onClose, onSubmit }: CreatePo
                 alignItems: "center",
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#64748b" }}>Cancel</Text>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#64748b" }}>
+                Cancel
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleSubmit}
+              disabled={loading || (!caption.trim() && images.length === 0)}
               style={{
                 flex: 2,
                 paddingVertical: 13,
                 borderRadius: 14,
                 alignItems: "center",
-                backgroundColor: caption.trim() ? "#0f172a" : "#e2e8f0",
+                backgroundColor:
+                  loading || (!caption.trim() && images.length === 0)
+                    ? "#e2e8f0"
+                    : "#0f172a",
               }}
             >
-              <Text style={{ fontSize: 14, fontWeight: "700", color: caption.trim() ? "#fff" : "#94a3b8" }}>
-                Publish Post
-              </Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "700",
+                    color:
+                      !caption.trim() && images.length === 0 ? "#94a3b8" : "#fff",
+                  }}
+                >
+                  Publish Post
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </Pressable>

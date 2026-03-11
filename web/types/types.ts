@@ -61,21 +61,29 @@ export interface UpdateDiaryInput {
 
 // ─── Post ─────────────────────────────────────────────────────────────────────
 
+export interface PostUser {
+  _id: string;
+  username?: string;
+  email?: string;
+  profilePic?: string;
+  backgroundColor?: string;
+}
+
 export interface Post {
   _id: string;
   userId: string;
-  username?: string;
-  avatar?: string;
-  caption: string;
-  image?: string;
-  likes: number;
+  text: string;
+  images: string[];
+  likes: string[];
   createdAt?: string;
+  updatedAt?: string;
+  user?: PostUser;
 }
 
 export interface CreatePostInput {
   userId: string;
-  caption: string;
-  imageBase64?: string;
+  text: string;
+  images?: any[];
 }
 
 // ─── Todo ─────────────────────────────────────────────────────────────────────
