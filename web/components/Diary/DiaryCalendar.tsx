@@ -170,10 +170,10 @@ export default function DiaryCalendar() {
                   borderRadius: 12,
 
                   borderWidth: isToday ? 1.5 : 0,
-                  borderColor: isToday ? "#ec4899" : "transparent",
+                  borderColor: isToday ? "#ca9bc4" : "transparent",
 
                   backgroundColor: isSelected
-                    ? "#fc62ff"
+                    ? "#f8cce0"
                     : entry?.mood
                     ? moodColor[entry.mood] ?? "#fdf6f0"
                     : "transparent",
