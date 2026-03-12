@@ -1,21 +1,7 @@
+import { Profile, UpdateProfileInput } from "@/types/types";
 import { apiFetch, apiFetchForm, base64ToBlob } from "./api";
 
-export interface Profile {
-  _id: string;
-  username?: string;
-  email?: string;
-  bio?: string;
-  profilePic?: string;
-  backgroundColor?: string;
-  friends?: string[];
-}
 
-export interface UpdateProfileInput {
-  username?: string;
-  bio?: string;
-  backgroundColor?: string;
-  imageBase64?: string;
-}
 
 export const getProfile = (userId: string): Promise<Profile> => {
   return apiFetch<Profile>(`/profile/user/${userId}`);
@@ -48,4 +34,8 @@ export const updateProfile = async (
   }
 
   return apiFetchForm<Profile>(`/profile/update/${userId}`, form, "PUT");
+};
+
+export const getProfileByUsername = (username: string) => {
+  return apiFetch(`/users/username/${encodeURIComponent(username)}`);
 };

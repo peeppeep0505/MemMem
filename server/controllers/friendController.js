@@ -64,3 +64,40 @@ exports.getFriends = async (req,res)=>{
 
   res.json(user.friends)
 }
+
+exports.getFriendRequests = async (req,res)=>{
+
+  const requests = await FriendRequest.find({
+    receiver: req.params.userId,
+    status: "pending"
+  }).populate("sender","username profilePic")
+
+  res.json(requests)
+}
+
+exports.searchUsers = async (req, res) => {
+
+  try {
+    const { keyword, currentUserId } = req.query
+    if (!keyword) {
+      return res.json([])
+    }
+    const users = await User.find({
+      _id: { $ne: currentUserId }, 
+      $or: [
+        { username: { $regex: keyword, $options: "i" } },
+        { name: { $regex: keyword, $options: "i" } }
+      ]
+    })
+    .select("_id username name profilePic")
+    .limit(20)
+
+    res.json(users)
+
+  } catch (error) {
+    console.error("searchUsers error:", error)
+    res.status(500).json({ message: "Failed to search users" })
+
+  }
+
+}

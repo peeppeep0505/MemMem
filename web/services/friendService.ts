@@ -28,3 +28,13 @@ export const removeFriend = (userId: string, friendId: string) => {
 export const getFriends = (userId: string) => {
   return apiFetch(`/friends/${userId}`);
 };
+
+export const getFriendRequests = (userId: string) => {
+  return apiFetch(`/friends/requests/${userId}`);
+};
+
+export const searchUsers = (keyword: string, currentUserId: string) => {
+  return apiFetch(
+    `/users/search?keyword=${encodeURIComponent(keyword.trim())}&currentUserId=${currentUserId}`
+  );
+};

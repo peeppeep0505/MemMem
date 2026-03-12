@@ -1,33 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// types.ts  —  shared types across services, contexts, and components
-// ─────────────────────────────────────────────────────────────────────────────
-export type ProfileResponse = {
-  _id: string;
-  username?: string;
-  email?: string;
-  bio?: string;
-  profilePic?: string;
-  backgroundColor?: string;
-};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export interface User {
-  _id: string;
-  username: string;
-  email: string;
-}
-
-export interface LoginResponse {
-  token: string;
-  user: User;
-}
-
-export interface RegisterResponse {
-  _id: string;
-  username: string;
-  email: string;
-}
 
 // ─── Diary ────────────────────────────────────────────────────────────────────
 
@@ -88,62 +61,42 @@ export interface CreatePostInput {
 
 // ─── Todo ─────────────────────────────────────────────────────────────────────
 
-export interface Todo {
+export type TodoStatus = "active" | "complete";
+
+export interface TodoItem {
   _id: string;
   userId: string;
   text: string;
-  completed: boolean;
+  status: TodoStatus;
   createdAt?: string;
-}
-
-export interface CreateTodoInput {
-  userId: string;
-  text: string;
-}
-
-export interface UpdateTodoInput {
-  text?: string;
-  completed?: boolean;
+  updatedAt?: string;
 }
 
 // ─── Friend ───────────────────────────────────────────────────────────────────
 
-export type FriendRequestStatus = "pending" | "accepted" | "declined";
 
-export interface FriendRequest {
-  _id: string;
-  senderId: string;
-  receiverId: string;
-  status: FriendRequestStatus;
-  createdAt?: string;
-}
-
-export interface FriendUser {
-  _id: string;
-  username: string;
-  email: string;
-}
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
 export interface Profile {
   _id: string;
-  userId: string;
-  username: string;
-  email: string;
+  username?: string;
+  email?: string;
   bio?: string;
-  avatarUrl?: string;
+  profilePic?: string;
+  backgroundColor?: string;
+  friends?: string[];
 }
 
 export interface UpdateProfileInput {
   username?: string;
   bio?: string;
-  avatarBase64?: string;
+  backgroundColor?: string;
+  imageBase64?: string;
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
-/** Generic paginated response wrapper (ใช้ถ้า server รองรับ pagination) */
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;

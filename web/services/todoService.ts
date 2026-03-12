@@ -1,7 +1,10 @@
+import { TodoItem, TodoStatus } from "@/types/types";
 import { apiFetch } from "./api";
 
+
+
 export const createTodo = (userId: string, text: string) => {
-  return apiFetch("/todos", {
+  return apiFetch<TodoItem>("/todos/create", {
     method: "POST",
     body: JSON.stringify({
       userId,
@@ -12,24 +15,26 @@ export const createTodo = (userId: string, text: string) => {
 };
 
 export const getTodos = (userId: string) => {
-  return apiFetch(`/todos/${userId}`);
+  return apiFetch<TodoItem[]>(`/todos/user/${userId}`);
 };
 
 export const updateTodo = (
   todoId: string,
   data: {
     text?: string;
-    status?: "active" | "complete";
+    status?: TodoStatus;
   }
 ) => {
-  return apiFetch(`/todos/${todoId}`, {
+  return apiFetch<TodoItem>(`/todos/update/${todoId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
 };
 
 export const deleteTodo = (todoId: string) => {
-  return apiFetch(`/todos/${todoId}`, {
+  return apiFetch<{ message: string }>(`/todos/delete/${todoId}`, {
     method: "DELETE",
   });
 };
+
+export { TodoItem };

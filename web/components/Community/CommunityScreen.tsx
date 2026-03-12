@@ -22,12 +22,19 @@ import {
   likePost,
 } from "@/services/postService";
 import { getProfile } from "@/services/profileService";
+import {
+  getFriends,
+  getFriendRequests,
+  acceptFriendRequest,
+  declineFriendRequest,
+} from "@/services/friendService";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type FeedFilter = "friends" | "mine";
 
 type FriendSidebarItem = {
+  _id: string;
   username: string;
   avatar: string;
   mutuals: number;
@@ -35,6 +42,8 @@ type FriendSidebarItem = {
 };
 
 type FriendRequestItem = {
+  _id: string;
+  requestId: string;
   username: string;
   avatar: string;
 };
@@ -47,6 +56,7 @@ type LoadedProfile = {
   profilePic?: string;
   backgroundColor?: string;
   friends?: string[];
+  friendCount?: number;
 };
 
 const SIDEBAR_LIMIT = 3;
@@ -162,6 +172,10 @@ export default function CommunityPage() {
     return 518;
   }, [windowWidth]);
 
+  const friendCount = useMemo(() => {
+    return profile?.friendCount ?? profile?.friends?.length ?? friends.length;
+  }, [profile, friends]);
+
   const loadProfile = useCallback(async () => {
     if (!userId) return;
     try {
@@ -203,18 +217,90 @@ export default function CommunityPage() {
     }
   }, [userId]);
 
+  const loadSidebarFriends = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const data = await getFriends(userId);
+
+      const normalized = Array.isArray(data)
+        ? data.map((item: any) => ({
+            _id: item._id,
+            username: item.username || item.name || "unknown",
+            avatar: getImageUri(item.profilePic),
+            mutuals: 0,
+            online: false,
+          }))
+        : [];
+
+      setFriends(normalized);
+    } catch (error) {
+      console.error("loadSidebarFriends error:", error);
+    }
+  }, [userId]);
+
+  const loadFriendRequests = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const data = await getFriendRequests(userId);
+
+      const normalized = Array.isArray(data)
+        ? data
+            .map((item: any) => {
+              const sender = item.sender;
+              if (!sender?._id) return null;
+
+              return {
+                _id: sender._id,
+                requestId: item._id,
+                username: sender.username || sender.name || "unknown",
+                avatar: getImageUri(sender.profilePic),
+              };
+            })
+            .filter(Boolean)
+        : [];
+
+      setRequests(normalized as FriendRequestItem[]);
+    } catch (error) {
+      console.error("loadFriendRequests error:", error);
+    }
+  }, [userId]);
+
   useEffect(() => {
     loadProfile();
     loadPosts();
-  }, [loadProfile, loadPosts]);
+    loadSidebarFriends();
+    loadFriendRequests();
+  }, [loadProfile, loadPosts, loadSidebarFriends, loadFriendRequests]);
 
   const handleAddPost = (newPost: Post) => {
     setPosts((prev) => [newPost, ...prev]);
     setFilter("mine");
   };
 
-  const handleRequest = (username: string) => {
-    setRequests((r) => r.filter((req) => req.username !== username));
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await acceptFriendRequest(requestId);
+      await Promise.all([
+        loadSidebarFriends(),
+        loadFriendRequests(),
+        loadProfile(),
+      ]);
+    } catch (error) {
+      console.error("handleAcceptRequest error:", error);
+      Alert.alert("Error", "Failed to accept request");
+    }
+  };
+
+  const handleDeclineRequest = async (requestId: string) => {
+    try {
+      await declineFriendRequest(requestId);
+      await loadFriendRequests();
+    } catch (error) {
+      console.error("handleDeclineRequest error:", error);
+      Alert.alert("Error", "Failed to decline request");
+    }
   };
 
   const toggleLike = async (postId: string) => {
@@ -407,7 +493,7 @@ export default function CommunityPage() {
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    onPress={() => router.push("/friend" as any)}
+                    onPress={() => router.push("/friends")}
                     style={{
                       marginTop: 14,
                       paddingHorizontal: 20,
@@ -729,7 +815,7 @@ export default function CommunityPage() {
                 >
                   {[
                     { label: "Posts", value: String(myPostCount) },
-                    { label: "Friends", value: String(friends.length) },
+                    { label: "Friends", value: String(friendCount) },
                   ].map((s, i) => (
                     <View
                       key={s.label}
@@ -790,14 +876,14 @@ export default function CommunityPage() {
                       color: "#94a3b8",
                     }}
                   >
-                    See all {friends.length}
+                    See all {friendCount}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {friends.slice(0, SIDEBAR_LIMIT).map((f, i) => (
                 <TouchableOpacity
-                  key={f.username}
+                  key={f._id || f.username}
                   activeOpacity={0.7}
                   onPress={() => router.push(`/profile/${f.username}` as any)}
                   style={{
@@ -819,6 +905,7 @@ export default function CommunityPage() {
                         borderRadius: 17,
                         borderWidth: 1.5,
                         borderColor: f.online ? "#22c55e" : "#f1f5f9",
+                        backgroundColor: "#e2e8f0",
                       }}
                     />
                     {f.online && (
@@ -854,7 +941,7 @@ export default function CommunityPage() {
                 </TouchableOpacity>
               ))}
 
-              {friends.length > SIDEBAR_LIMIT && (
+              {friendCount > SIDEBAR_LIMIT && (
                 <TouchableOpacity
                   onPress={() => router.push("/friends" as any)}
                   style={{ marginTop: 10, alignItems: "center" }}
@@ -866,7 +953,7 @@ export default function CommunityPage() {
                       color: "#94a3b8",
                     }}
                   >
-                    +{friends.length - SIDEBAR_LIMIT} more friends
+                    +{friendCount - SIDEBAR_LIMIT} more friends
                   </Text>
                 </TouchableOpacity>
               )}
@@ -938,7 +1025,7 @@ export default function CommunityPage() {
 
                 {requests.slice(0, SIDEBAR_LIMIT).map((req, i) => (
                   <View
-                    key={req.username}
+                    key={req.requestId}
                     style={{
                       paddingVertical: 10,
                       borderBottomWidth:
@@ -964,6 +1051,7 @@ export default function CommunityPage() {
                           borderRadius: 17,
                           borderWidth: 1.5,
                           borderColor: "#f1f5f9",
+                          backgroundColor: "#e2e8f0",
                         }}
                       />
                       <Text
@@ -979,7 +1067,7 @@ export default function CommunityPage() {
                     </TouchableOpacity>
                     <View style={{ flexDirection: "row", gap: 8 }}>
                       <TouchableOpacity
-                        onPress={() => handleRequest(req.username)}
+                        onPress={() => handleAcceptRequest(req.requestId)}
                         style={{
                           flex: 1,
                           paddingVertical: 7,
@@ -999,7 +1087,7 @@ export default function CommunityPage() {
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => handleRequest(req.username)}
+                        onPress={() => handleDeclineRequest(req.requestId)}
                         style={{
                           flex: 1,
                           paddingVertical: 7,

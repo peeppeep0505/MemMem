@@ -19,8 +19,9 @@ const postRoutes = require("./routes/postRoutes")
 const friendRoutes = require("./routes/friendRoutes")
 const todoRoutes = require("./routes/todoRoutes")
 const profileRoutes = require("./routes/profileRoutes")
+const userRoutes = require("./routes/userRoutes")
 
-
+app.use("/api/users", userRoutes)
 app.use("/api/auth",authRoutes)
 app.use("/api/diary",diaryRoutes)
 app.use("/api/post",postRoutes)
