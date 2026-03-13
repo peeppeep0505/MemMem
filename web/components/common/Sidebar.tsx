@@ -11,6 +11,7 @@ export default function Sidebar() {
     { label: "Diary", icon: "calendar-outline", path: "/diary" },
     { label: "Community", icon: "images-outline", path: "/community" },
     { label: "Todo List", icon: "checkbox-outline", path: "/todolist" },
+    { label: "Shop", icon: "cart-outline", path: "/shop" },
     { label: "Profile", icon: "person-outline", path: "/profile" },
   ];
   const { logout } = useAuth();

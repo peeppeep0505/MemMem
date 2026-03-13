@@ -13,21 +13,25 @@ app.get("/", (req, res) => {
   res.send("MemMem API running");
 });
 
-const authRoutes = require("./routes/authRoutes")
-const diaryRoutes = require("./routes/diaryRoutes")
-const postRoutes = require("./routes/postRoutes")
-const friendRoutes = require("./routes/friendRoutes")
-const todoRoutes = require("./routes/todoRoutes")
-const profileRoutes = require("./routes/profileRoutes")
-const userRoutes = require("./routes/userRoutes")
+const authRoutes = require("./routes/authRoutes");
+const diaryRoutes = require("./routes/diaryRoutes");
+const postRoutes = require("./routes/postRoutes");
+const friendRoutes = require("./routes/friendRoutes");
+const todoRoutes = require("./routes/todoRoutes");
+const profileRoutes = require("./routes/profileRoutes");
+const userRoutes = require("./routes/userRoutes");
+const productRoutes = require("./routes/productRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 
-app.use("/api/users", userRoutes)
-app.use("/api/auth",authRoutes)
-app.use("/api/diary",diaryRoutes)
-app.use("/api/post",postRoutes)
-app.use("/api/friends", friendRoutes)
-app.use("/api/todos", todoRoutes)
-app.use("/api/profile", profileRoutes)
+app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/diary", diaryRoutes);
+app.use("/api/post", postRoutes);
+app.use("/api/friends", friendRoutes);
+app.use("/api/todos", todoRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
 
 app.listen(5000, () => {
   console.log("Server running on port 5000");
