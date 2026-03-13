@@ -227,9 +227,6 @@ export default function OrderHistoryScreen() {
             <Text style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}>
               My Orders
             </Text>
-            <Text style={{ color: "#6b7280", marginTop: 4 }}>
-              รองรับสถานะ Pending / Syncing / Synced / Paid สำหรับเดโมฟังก์ชัน 7.5
-            </Text>
             <TouchableOpacity
   onPress={async () => {
     await AsyncStorage.removeItem("@shop_order_queue");

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Animated,
   Platform,
   Pressable,
@@ -21,7 +20,7 @@ import { createOrder } from "@/services/orderService";
 import { useCartStore } from "@/store/useCartStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { syncPendingOrders } from "@/services/orderSyncService";
 
@@ -155,6 +154,7 @@ function ProductSkeletonCard() {
 export default function ShopScreen() {
   const { isAdmin } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams<{ q?: string; category?: string }>();
   const { width } = useWindowDimensions();
   const isWide = width >= 1180;
 
@@ -177,6 +177,7 @@ export default function ShopScreen() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInFlightRef = useRef(false);
+  const hasHydratedFromUrlRef = useRef(false);
 
   const {
     items,
@@ -195,6 +196,14 @@ export default function ShopScreen() {
 
   const drawerAnim = useRef(new Animated.Value(0)).current;
 
+  const qParam = useMemo(() => {
+    return typeof params.q === "string" ? params.q : "";
+  }, [params.q]);
+
+  const categoryParam = useMemo(() => {
+    return typeof params.category === "string" ? params.category : "";
+  }, [params.category]);
+
   useEffect(() => {
     Animated.timing(drawerAnim, {
       toValue: isDrawerOpen ? 1 : 0,
@@ -203,21 +212,39 @@ export default function ShopScreen() {
     }).start();
   }, [drawerAnim, isDrawerOpen]);
 
-  const scheduleSearch = useCallback((value: string) => {
+  useEffect(() => {
+    setQuery((prev) => (prev === qParam ? prev : qParam));
+    setDebouncedQuery((prev) => (prev === qParam ? prev : qParam));
+    setCategory((prev) => (prev === categoryParam ? prev : categoryParam));
+    hasHydratedFromUrlRef.current = true;
+  }, [qParam, categoryParam]);
+
+  useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(value.trim());
+      const next = query.trim();
+      setDebouncedQuery((prev) => (prev === next ? prev : next));
     }, 500);
-  }, []);
-
-  useEffect(() => {
-    scheduleSearch(query);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, scheduleSearch]);
+  }, [query]);
+
+  useEffect(() => {
+    if (!hasHydratedFromUrlRef.current) return;
+
+    const nextQ = debouncedQuery.trim();
+    const nextCategory = category;
+
+    if (nextQ === qParam && nextCategory === categoryParam) return;
+
+    router.setParams({
+      q: nextQ || undefined,
+      category: nextCategory || undefined,
+    });
+  }, [debouncedQuery, category, qParam, categoryParam, router]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -244,21 +271,21 @@ export default function ShopScreen() {
   }, [fetchAll]);
 
   const syncQueue = useCallback(async () => {
-  if (syncInFlightRef.current) return;
+    if (syncInFlightRef.current) return;
 
-  syncInFlightRef.current = true;
-  setSyncing(true);
+    syncInFlightRef.current = true;
+    setSyncing(true);
 
-  try {
-    const changed = await syncPendingOrders();
-    if (changed) {
-      fetchAll();
+    try {
+      const changed = await syncPendingOrders();
+      if (changed) {
+        fetchAll();
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      setSyncing(false);
     }
-  } finally {
-    syncInFlightRef.current = false;
-    setSyncing(false);
-  }
-}, [fetchAll]);
+  }, [fetchAll]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -274,10 +301,6 @@ export default function ShopScreen() {
   }, [syncQueue]);
 
   const handleCheckout = async () => {
-    console.log("CHECKOUT_CLICK", {
-    items,
-    time: Date.now(),
-  });
     if (!items.length) return;
 
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -639,6 +662,7 @@ export default function ShopScreen() {
                 alignItems: "center",
                 gap: 12,
                 flexWrap: "wrap",
+                marginTop: 16,
               }}
             >
               <TextInput
@@ -656,29 +680,31 @@ export default function ShopScreen() {
                 }}
               />
 
-              {["", "Title", "Badge", "Theme"].map((item) => (
-                <TouchableOpacity
-                  key={item || "all"}
-                  onPress={() => setCategory(item)}
-                  style={{
-                    backgroundColor: category === item ? "#111827" : "#fff",
-                    borderRadius: 999,
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    borderWidth: 1,
-                    borderColor: category === item ? "#111827" : "#d1d5db",
-                  }}
-                >
-                  <Text
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                {["", "Title", "Badge", "Theme"].map((item) => (
+                  <TouchableOpacity
+                    key={item || "all"}
+                    onPress={() => setCategory(item)}
                     style={{
-                      color: category === item ? "#fff" : "#111827",
-                      fontWeight: "700",
+                      backgroundColor: category === item ? "#111827" : "#fff",
+                      borderRadius: 999,
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      borderWidth: 1,
+                      borderColor: category === item ? "#111827" : "#d1d5db",
                     }}
                   >
-                    {item || "All"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={{
+                        color: category === item ? "#fff" : "#111827",
+                        fontWeight: "700",
+                      }}
+                    >
+                      {item || "All"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
 
             {error ? (
