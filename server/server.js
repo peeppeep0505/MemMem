@@ -34,6 +34,18 @@ app.get("/scan", (req, res) => {
   });
 });
 
+app.get("/health", (req, res) => {
+  const memoryUsageBytes = process.memoryUsage().heapUsed;
+  const memoryUsageMb = Number((memoryUsageBytes / 1024 / 1024).toFixed(2));
+
+  return res.status(200).json({
+    status: "ok",
+    uptime: Number(process.uptime().toFixed(2)),
+    memory_usage_mb: memoryUsageMb,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 const authRoutes = require("./routes/authRoutes");
 const diaryRoutes = require("./routes/diaryRoutes");
 const postRoutes = require("./routes/postRoutes");
