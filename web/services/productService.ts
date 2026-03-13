@@ -23,6 +23,7 @@ export interface ProductQuery {
   minPrice?: number;
   maxPrice?: number;
   sort?: string;
+  activeOnly?: boolean | string;
 }
 
 export interface ProductStats {
@@ -56,3 +57,45 @@ export const getProductById = (productId: string) => {
 export const getProductStats = () => {
   return apiFetch<ProductStats>("/products/stats");
 };
+
+export const updateProduct = (
+  productId: string,
+  payload: Partial<Product> & Record<string, any>
+) => {
+  return apiFetch<Product>(`/products/${productId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+};
+
+export const archiveProduct = (productId: string) => {
+  return apiFetch<{ message: string; product: Product }>(`/products/${productId}`, {
+    method: "DELETE",
+  });
+};
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withRetry<T>(
+  action: () => Promise<T>,
+  retries = 3,
+  delayMs = 500
+): Promise<T> {
+  let lastError: any;
+
+  for (let i = 1; i <= retries; i += 1) {
+    try {
+      return await action();
+    } catch (err) {
+      lastError = err;
+      console.log(`Retrying... (${i})`);
+      if (i < retries) {
+        await wait(delayMs * i);
+      }
+    }
+  }
+
+  return Promise.reject(lastError);
+}

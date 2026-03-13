@@ -1,11 +1,12 @@
-const express = require("express")
-const router = express.Router()
+const express = require("express");
+const router = express.Router();
 
-const authController = require("../controllers/authController")
-router.post("/register",authController.register)
-router.post("/login",authController.login)
-router.post("/change-password",authController.changePassword)
-router.delete("/soft-delete/:userId",authController.softDeleteUser)
-router.post("/logout", authController.logout);
+const authController = require("../controllers/authController");
+const { loginRateLimiter, protect } = require("../middleware/auth");
 
-module.exports = router
+router.post("/register", authController.register);
+router.post("/login", loginRateLimiter, authController.login);
+router.put("/change-password", protect, authController.changePassword);
+router.post("/logout", protect, authController.logout);
+
+module.exports = router;

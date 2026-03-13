@@ -22,6 +22,8 @@ import { useCartStore } from "@/store/useCartStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { useRouter } from "expo-router";
+import { useAuth } from "@/contexts/AuthContext";
+
 
 type QueueOrderItem = {
   productId: string;
@@ -151,6 +153,7 @@ function ProductSkeletonCard() {
 }
 
 export default function ShopScreen() {
+  const { isAdmin } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isWide = width >= 1180;
@@ -539,6 +542,7 @@ export default function ShopScreen() {
             contentContainerStyle={{ paddingBottom: 32 }}
             showsVerticalScrollIndicator={false}
           >
+            
             <View
               style={{
                 flexDirection: "row",
@@ -557,7 +561,41 @@ export default function ShopScreen() {
                 </Text>
               </View>
 
-              {!isWide ? (
+              <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    onPress={() => router.push("/shop/admin")}
+                    style={{
+                      backgroundColor: "#fff",
+                      paddingHorizontal: 18,
+                      paddingVertical: 12,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: "#111827",
+                    }}
+                  >
+                    <Text style={{ color: "#111827", fontWeight: "700" }}>
+                      Admin Products
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                <TouchableOpacity
+                  onPress={() => router.push("/shop/orders")}
+                  style={{
+                    backgroundColor: "#fff",
+                    paddingHorizontal: 18,
+                    paddingVertical: 12,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: "#d1d5db",
+                  }}
+                >
+                  <Text style={{ color: "#111827", fontWeight: "700" }}>
+                    My Orders
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => toggleDrawer(true)}
                   style={{
@@ -571,7 +609,7 @@ export default function ShopScreen() {
                     Cart ({items.reduce((sum, i) => sum + i.quantity, 0)})
                   </Text>
                 </TouchableOpacity>
-              ) : null}
+              </View>
             </View>
 
             <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap", marginTop: 16 }}>
@@ -611,10 +649,10 @@ export default function ShopScreen() {
             <View
               style={{
                 flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
                 gap: 12,
                 flexWrap: "wrap",
-                alignItems: "center",
-                marginTop: 16,
               }}
             >
               <TextInput

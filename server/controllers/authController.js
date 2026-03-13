@@ -1,72 +1,129 @@
 const User = require("../models/User");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const {
+  sendToken,
+  registerFailedLogin,
+  clearLoginAttempts,
+  blacklistToken,
+  parseToken,
+  getClientIp,
+} = require("../middleware/auth");
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 exports.register = async (req, res) => {
-  const { username, email, password } = req.body;
+  try {
+    const { username, email, password, role } = req.body;
 
-  const hash = await bcrypt.hash(password, 10);
+    if (!username || !email || !password) {
+      return res.status(400).json({
+        message: "Username, email, and password are required",
+      });
+    }
 
-  const user = await User.create({
-    username,
-    email,
-    password: hash,
-  });
+    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({ message: "Email already in use" });
+    }
 
-  res.json(user);
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ message: "Username already in use" });
+    }
+
+    const user = await User.create({
+      username,
+      email,
+      password,
+      role: role && ["user", "editor", "manager", "admin"].includes(role) ? role : "user",
+      isDeleted: false,
+    });
+
+    return sendToken(user, 201, res);
+  } catch (err) {
+    return res.status(400).json({
+      message: err.message || "Registration failed",
+    });
+  }
 };
 
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).json("User not found");
-  
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(400).json("Wrong password");
-  
-  const token = jwt.sign({ id: user._id }, "secret");
-  
-  const { password: _, ...userWithoutPassword } = user.toObject();
-  res.json({ token, user: userWithoutPassword });
+  try {
+    const { email, password } = req.body;
+    const ip = getClientIp(req);
+
+    if (!email || !password) {
+      await sleep(2000);
+      registerFailedLogin(ip);
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      isDeleted: false,
+    }).select("+password");
+
+    if (!user) {
+      await sleep(2000);
+      registerFailedLogin(ip);
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const isCorrect = await user.correctPassword(password, user.password);
+
+    if (!isCorrect) {
+      await sleep(2000);
+      registerFailedLogin(ip);
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    clearLoginAttempts(ip);
+    return sendToken(user, 200, res);
+  } catch (err) {
+    return res.status(500).json({ message: "Login failed" });
+  }
 };
 
-exports.changePassword = async (req,res)=>{
+exports.changePassword = async (req, res) => {
+  try {
+    const { userId, oldPassword, newPassword } = req.body;
 
-  const { userId, oldPassword, newPassword } = req.body
+    const user = await User.findById(userId).select("+password");
 
-  const user = await User.findById(userId)
+    if (!user || user.isDeleted) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-  const match = await bcrypt.compare(oldPassword,user.password)
+    const match = await user.correctPassword(oldPassword, user.password);
 
-  if(!match){
-    return res.status(400).json("Wrong old password")
+    if (!match) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    return res.json({ message: "Password updated" });
+  } catch (err) {
+    return res.status(400).json({ message: err.message || "Failed to change password" });
   }
-
-  const hash = await bcrypt.hash(newPassword,10)
-
-  user.password = hash
-
-  await user.save()
-
-  res.json({message:"Password updated"})
-}
-
-exports.softDeleteUser = async (req,res)=>{
-
-  await User.findByIdAndUpdate(
-    req.params.userId,
-    { isDeleted:true }
-  )
-
-  res.json({message:"User deleted"})
-}
+};
 
 exports.logout = async (req, res) => {
   try {
-    return res.json({
-      message: "Logout success",
+    const token = parseToken(req);
+    if (token) {
+      blacklistToken(token);
+    }
+
+    res.cookie("jwt", "logged-out", {
+      httpOnly: true,
+      expires: new Date(Date.now() + 10 * 1000),
     });
+
+    return res.json({ message: "Logout success" });
   } catch (err) {
-    res.status(500).json({ message: "Logout failed" });
+    return res.status(500).json({ message: "Logout failed" });
   }
 };

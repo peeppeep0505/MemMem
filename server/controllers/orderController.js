@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Product = require("../models/Product");
 
@@ -12,8 +11,10 @@ function calcTax(subtotal) {
 }
 
 exports.createOrder = async (req, res) => {
+  const deductedItems = [];
+
   try {
-    const { items = [], clientRequestId, source = "online" } = req.body;
+    const { items = [], clientRequestId, source = "online" } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Order items are required" });
@@ -34,10 +35,10 @@ exports.createOrder = async (req, res) => {
     let subtotal = 0;
 
     for (const item of items) {
-      const quantity = Number(item.quantity || 0);
+      const quantity = Number(item?.quantity || 0);
 
-      if (!item.productId || quantity <= 0) {
-        return res.status(400).json({ message: "Invalid product or quantity" });
+      if (!item?.productId || quantity <= 0) {
+        throw new Error("Invalid product or quantity");
       }
 
       const product = await Product.findOneAndUpdate(
@@ -51,12 +52,15 @@ exports.createOrder = async (req, res) => {
       );
 
       if (!product) {
-        return res.status(400).json({
-          message: `Insufficient stock for product ${item.productId}`,
-        });
+        throw new Error(`Insufficient stock for product ${item.productId}`);
       }
 
-      const unitPrice = product.salePrice;
+      deductedItems.push({
+        productId: product._id,
+        quantity,
+      });
+
+      const unitPrice = Number(product.salePrice);
       const lineSubtotal = Number((unitPrice * quantity).toFixed(2));
 
       subtotal += lineSubtotal;
@@ -74,7 +78,7 @@ exports.createOrder = async (req, res) => {
     const tax = calcTax(subtotal);
     const shipping = calcShipping(subtotal);
     const totalPrice = Number((subtotal + tax + shipping).toFixed(2));
-
+    //throw new Error("Force order create fail");
     const order = await Order.create({
       user: req.user.id,
       items: normalizedItems,
@@ -87,11 +91,30 @@ exports.createOrder = async (req, res) => {
       clientRequestId: clientRequestId || null,
     });
 
-    res.status(201).json(order);
+    return res.status(201).json(order);
   } catch (err) {
-    res.status(400).json({
-      message: err.message || "Failed to create order",
-    });
+    if (deductedItems.length > 0) {
+      for (const deducted of deductedItems) {
+        try {
+          await Product.findByIdAndUpdate(deducted.productId, {
+            $inc: { stock: deducted.quantity },
+          });
+        } catch (rollbackErr) {
+          console.error("Rollback failed for product:", deducted.productId, rollbackErr);
+        }
+      }
+    }
+
+    const message = err?.message || "Failed to create order";
+
+    if (
+      message.includes("Insufficient stock") ||
+      message === "Invalid product or quantity"
+    ) {
+      return res.status(400).json({ message });
+    }
+
+    return res.status(400).json({ message });
   }
 };
 
