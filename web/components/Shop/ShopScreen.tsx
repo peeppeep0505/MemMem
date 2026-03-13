@@ -23,7 +23,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
-
+import { syncPendingOrders } from "@/services/orderSyncService";
 
 type QueueOrderItem = {
   productId: string;
@@ -36,7 +36,7 @@ type QueueOrderItem = {
 type QueueOrder = {
   id: string;
   items: QueueOrderItem[];
-  status: "pending" | "synced";
+  status: "pending" | "syncing" | "synced";
   createdAt: string;
   subtotal: number;
   tax: number;
@@ -176,6 +176,7 @@ export default function ShopScreen() {
   const [syncing, setSyncing] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncInFlightRef = useRef(false);
 
   const {
     items,
@@ -243,46 +244,28 @@ export default function ShopScreen() {
   }, [fetchAll]);
 
   const syncQueue = useCallback(async () => {
-    try {
-      setSyncing(true);
+  if (syncInFlightRef.current) return;
 
-      const raw = await AsyncStorage.getItem(ORDER_QUEUE_KEY);
-      const queue: QueueOrder[] = raw ? JSON.parse(raw) : [];
+  syncInFlightRef.current = true;
+  setSyncing(true);
 
-      let changed = false;
-
-      for (const entry of queue) {
-        if (entry.status === "synced") continue;
-
-        await createOrder({
-          items: entry.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-          })),
-          clientRequestId: entry.id,
-          source: "offline-sync",
-        });
-
-        entry.status = "synced";
-        changed = true;
-      }
-
-      if (changed) {
-        await AsyncStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue));
-      }
-    } catch {
-      // intentionally silent for background sync
-    } finally {
-      setSyncing(false);
+  try {
+    const changed = await syncPendingOrders();
+    if (changed) {
+      fetchAll();
     }
-  }, []);
+  } finally {
+    syncInFlightRef.current = false;
+    setSyncing(false);
+  }
+}, [fetchAll]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       const online = !!state.isConnected;
       setSyncBanner(online ? "online" : "offline");
 
-      if (online) {
+      if (online && !syncInFlightRef.current) {
         syncQueue();
       }
     });
@@ -291,9 +274,13 @@ export default function ShopScreen() {
   }, [syncQueue]);
 
   const handleCheckout = async () => {
+    console.log("CHECKOUT_CLICK", {
+    items,
+    time: Date.now(),
+  });
     if (!items.length) return;
 
-    const requestId = `${Date.now()}`;
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const queueOrder: QueueOrder = {
       id: requestId,
@@ -542,7 +529,6 @@ export default function ShopScreen() {
             contentContainerStyle={{ paddingBottom: 32 }}
             showsVerticalScrollIndicator={false}
           >
-            
             <View
               style={{
                 flexDirection: "row",

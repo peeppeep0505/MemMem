@@ -10,16 +10,37 @@ function calcTax(subtotal) {
   return Number((subtotal * 0.07).toFixed(2));
 }
 
+async function rollbackDeductedItems(deductedItems) {
+  if (!deductedItems.length) return;
+
+  for (const deducted of deductedItems) {
+    try {
+      await Product.findByIdAndUpdate(deducted.productId, {
+        $inc: { stock: deducted.quantity },
+      });
+    } catch (rollbackErr) {
+      console.error("Rollback failed for product:", deducted.productId, rollbackErr);
+    }
+  }
+}
+
 exports.createOrder = async (req, res) => {
+  console.log("CREATE_ORDER_HIT", {
+    userId: req.user?.id,
+    clientRequestId: req.body?.clientRequestId,
+    items: req.body?.items,
+    time: Date.now(),
+  });
+
   const deductedItems = [];
+  const { items = [], clientRequestId, source = "online" } = req.body || {};
 
   try {
-    const { items = [], clientRequestId, source = "online" } = req.body || {};
-
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "Order items are required" });
     }
 
+    // idempotency check ก่อนเริ่ม
     if (clientRequestId) {
       const existing = await Order.findOne({
         clientRequestId,
@@ -93,15 +114,20 @@ exports.createOrder = async (req, res) => {
 
     return res.status(201).json(order);
   } catch (err) {
+    // สำคัญมาก: ถ้ามี stock ถูกหักไปแล้ว ต้อง rollback ก่อนเสมอ
     if (deductedItems.length > 0) {
-      for (const deducted of deductedItems) {
-        try {
-          await Product.findByIdAndUpdate(deducted.productId, {
-            $inc: { stock: deducted.quantity },
-          });
-        } catch (rollbackErr) {
-          console.error("Rollback failed for product:", deducted.productId, rollbackErr);
-        }
+      await rollbackDeductedItems(deductedItems);
+    }
+
+    // หลัง rollback แล้วค่อย handle duplicate request
+    if (err?.code === 11000 && clientRequestId) {
+      const existing = await Order.findOne({
+        clientRequestId,
+        user: req.user.id,
+      });
+
+      if (existing) {
+        return res.status(200).json(existing);
       }
     }
 

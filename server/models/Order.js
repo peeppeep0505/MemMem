@@ -77,10 +77,19 @@ const orderSchema = new mongoose.Schema(
     clientRequestId: {
       type: String,
       default: null,
-      index: true,
     },
   },
   { timestamps: true }
+);
+
+orderSchema.index(
+  { user: 1, clientRequestId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientRequestId: { $type: "string" },
+    },
+  }
 );
 
 module.exports = mongoose.model("Order", orderSchema);

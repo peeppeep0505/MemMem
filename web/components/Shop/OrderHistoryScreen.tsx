@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,6 +11,7 @@ import { getMyOrders, createOrder, type Order } from "@/services/orderService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { useFocusEffect } from "expo-router";
+import { loadOrderQueue, syncPendingOrders } from "@/services/orderSyncService";
 
 const ORDER_QUEUE_KEY = "@shop_order_queue";
 
@@ -25,7 +26,7 @@ type QueueOrderItem = {
 type QueueOrder = {
   id: string;
   items: QueueOrderItem[];
-  status: "pending" | "synced";
+  status: "pending" | "syncing" | "synced";
   createdAt: string;
   subtotal: number;
   tax: number;
@@ -50,7 +51,7 @@ type DisplayOrder =
       id: string;
       createdAt: string;
       totalPrice: number;
-      status: "pending" | "synced";
+      status: "pending" | "syncing" | "synced";
       source: "offline-sync";
       items: QueueOrderItem[];
     };
@@ -73,6 +74,14 @@ function getStatusStyle(status: string) {
       bg: "#fef3c7",
       color: "#92400e",
       label: "Pending ⏳",
+    };
+  }
+
+  if (status === "syncing") {
+    return {
+      bg: "#e0e7ff",
+      color: "#4338ca",
+      label: "Syncing ⏱️",
     };
   }
 
@@ -99,12 +108,13 @@ export default function OrderHistoryScreen() {
   const [error, setError] = useState("");
   const [isOnline, setIsOnline] = useState(true);
 
+  const syncInFlightRef = useRef(false);
+
   const loadQueue = useCallback(async () => {
-    const raw = await AsyncStorage.getItem(ORDER_QUEUE_KEY);
-    const queue: QueueOrder[] = raw ? JSON.parse(raw) : [];
-    setQueueOrders(queue);
-    return queue;
-  }, []);
+  const queue = await loadOrderQueue();
+  setQueueOrders(queue);
+  return queue;
+}, []);
 
   const loadAll = useCallback(async () => {
     try {
@@ -121,46 +131,25 @@ export default function OrderHistoryScreen() {
   }, [loadQueue]);
 
   const syncQueue = useCallback(async () => {
+    if (syncInFlightRef.current) return;
+
+    syncInFlightRef.current = true;
+    setSyncing(true);
+
     try {
-      setSyncing(true);
       setError("");
-
-      const raw = await AsyncStorage.getItem(ORDER_QUEUE_KEY);
-      const queue: QueueOrder[] = raw ? JSON.parse(raw) : [];
-
-      let changed = false;
-
-      for (const entry of queue) {
-        if (entry.status === "synced") continue;
-
-        try {
-          await createOrder({
-            items: entry.items.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-            })),
-            clientRequestId: entry.id,
-            source: "offline-sync",
-          });
-
-          entry.status = "synced";
-          changed = true;
-        } catch {
-          // keep pending
-        }
-      }
-
-      if (changed) {
-        await AsyncStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue));
-      }
-
+      await syncPendingOrders();
       await loadAll();
     } catch (err: any) {
       setError(err?.message || "Failed to sync pending orders");
     } finally {
+      syncInFlightRef.current = false;
       setSyncing(false);
     }
   }, [loadAll]);
+
+
+
 
   useEffect(() => {
     loadAll();
@@ -169,7 +158,7 @@ export default function OrderHistoryScreen() {
       const online = !!state.isConnected;
       setIsOnline(online);
 
-      if (online) {
+      if (online && !syncInFlightRef.current) {
         syncQueue();
       }
     });
@@ -219,6 +208,7 @@ export default function OrderHistoryScreen() {
   }, [queueOrders, serverOrders]);
 
   const pendingCount = queueOrders.filter((x) => x.status === "pending").length;
+  const syncingCount = queueOrders.filter((x) => x.status === "syncing").length;
   const syncedCount = queueOrders.filter((x) => x.status === "synced").length;
 
   return (
@@ -238,8 +228,24 @@ export default function OrderHistoryScreen() {
               My Orders
             </Text>
             <Text style={{ color: "#6b7280", marginTop: 4 }}>
-              รองรับสถานะ Pending / Synced / Paid สำหรับเดโมฟังก์ชัน 7.5
+              รองรับสถานะ Pending / Syncing / Synced / Paid สำหรับเดโมฟังก์ชัน 7.5
             </Text>
+            <TouchableOpacity
+  onPress={async () => {
+    await AsyncStorage.removeItem("@shop_order_queue");
+    console.log("Cleared @shop_order_queue");
+  }}
+  style={{
+    backgroundColor: "#fee2e2",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+  }}
+>
+  <Text style={{ color: "#b91c1c", fontWeight: "700" }}>
+    Clear Queue
+  </Text>
+</TouchableOpacity>
           </View>
 
           <View
@@ -275,6 +281,22 @@ export default function OrderHistoryScreen() {
             <Text style={{ color: "#6b7280" }}>Pending</Text>
             <Text style={{ fontSize: 24, fontWeight: "800", color: "#92400e" }}>
               {pendingCount}
+            </Text>
+          </View>
+
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 16,
+              padding: 16,
+              minWidth: 160,
+              borderWidth: 1,
+              borderColor: "#e5e7eb",
+            }}
+          >
+            <Text style={{ color: "#6b7280" }}>Syncing</Text>
+            <Text style={{ fontSize: 24, fontWeight: "800", color: "#4338ca" }}>
+              {syncingCount}
             </Text>
           </View>
 
@@ -326,8 +348,9 @@ export default function OrderHistoryScreen() {
 
           <TouchableOpacity
             onPress={syncQueue}
+            disabled={syncing}
             style={{
-              backgroundColor: "#111827",
+              backgroundColor: syncing ? "#9ca3af" : "#111827",
               paddingHorizontal: 16,
               paddingVertical: 12,
               borderRadius: 12,
@@ -422,6 +445,8 @@ export default function OrderHistoryScreen() {
                       <Text style={{ color: "#6b7280", marginTop: 4 }}>
                         {order.status === "pending"
                           ? "Waiting for internet connection to sync with server"
+                          : order.status === "syncing"
+                          ? "Syncing order with server now"
                           : "Synced with server — waiting for refreshed server list"}
                       </Text>
                     ) : null}
