@@ -1,6 +1,22 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 
+const socialLinksSchema = new mongoose.Schema(
+  {
+    facebook: { type: String, trim: true, default: "" },
+    instagram: { type: String, trim: true, default: "" },
+    github: { type: String, trim: true, default: "" },
+  },
+  { _id: false }
+);
+
+const preferencesSchema = new mongoose.Schema(
+  {
+    showSocialLinks: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -26,16 +42,43 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "editor", "manager", "admin"],
+      enum: ["guest", "user", "editor", "manager", "admin"],
       default: "user",
     },
     passwordChangedAt: {
       type: Date,
       default: null,
     },
-    profilePic: String,
-    bio: String,
-    backgroundColor: String,
+    profilePic: {
+      type: String,
+      default: "",
+    },
+    bio: {
+      type: String,
+      default: "",
+      maxlength: 200,
+    },
+    backgroundColor: {
+      type: String,
+      default: "#9ca3af",
+    },
+    adminCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    socialLinks: {
+      type: socialLinksSchema,
+      default: () => ({}),
+    },
+    preferences: {
+      type: preferencesSchema,
+      default: () => ({}),
+    },
+    dynamicProfileData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     friends: [
       {
         type: mongoose.Schema.Types.ObjectId,

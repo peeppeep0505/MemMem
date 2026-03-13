@@ -1,41 +1,60 @@
-import { Profile, UpdateProfileInput } from "@/types/types";
-import { apiFetch, apiFetchForm, base64ToBlob } from "./api";
+import { apiFetch } from "./api";
 
-
-
-export const getProfile = (userId: string): Promise<Profile> => {
-  return apiFetch<Profile>(`/profile/user/${userId}`);
+export type ProfileData = {
+  _id?: string;
+  username?: string;
+  email?: string;
+  bio?: string;
+  role?: "guest" | "user" | "editor" | "manager" | "admin";
+  profilePic?: string;
+  backgroundColor?: string;
+  adminCode?: string;
+  preferences?: {
+    showSocialLinks?: boolean;
+  };
+  socialLinks?: {
+    facebook?: string;
+    instagram?: string;
+    github?: string;
+  };
+  dynamicProfileData?: Record<string, any>;
+  friends?: string[];
+  friendCount?: number;
+  postCount?: number;
 };
 
-export const updateProfile = async (
+export type UpdateProfileInput = {
+  username?: string;
+  bio?: string;
+  role?: string;
+  adminCode?: string;
+  preferences?: {
+    showSocialLinks?: boolean;
+  };
+  socialLinks?: {
+    facebook?: string;
+    instagram?: string;
+    github?: string;
+  };
+  dynamicProfileData?: Record<string, any>;
+  backgroundColor?: string;
+  imageBase64?: string;
+};
+
+export const getProfile = (userId: string): Promise<ProfileData> => {
+  return apiFetch<ProfileData>(`/profile/user/${userId}`);
+};
+
+export const getProfileByUsername = (username: string): Promise<ProfileData> => {
+  return apiFetch<ProfileData>(`/profile/username/${encodeURIComponent(username)}`);
+};
+
+export const updateProfile = (
   userId: string,
-  input: UpdateProfileInput
-): Promise<Profile> => {
-  const form = new FormData();
-
-  if (input.username !== undefined) {
-    form.append("username", input.username);
-  }
-
-  if (input.bio !== undefined) {
-    form.append("bio", input.bio);
-  }
-
-  if (input.backgroundColor !== undefined) {
-    form.append("backgroundColor", input.backgroundColor);
-  }
-
-  if (input.imageBase64) {
-    const mimeTypeMatch = input.imageBase64.match(/^data:(.*?);base64,/);
-    const mimeType = mimeTypeMatch?.[1] || "image/jpeg";
-    const blob = base64ToBlob(input.imageBase64, mimeType);
-
-    form.append("image", blob, "profile.jpg");
-  }
-
-  return apiFetchForm<Profile>(`/profile/update/${userId}`, form, "PUT");
-};
-
-export const getProfileByUsername = (username: string) => {
-  return apiFetch(`/users/username/${encodeURIComponent(username)}`);
+  payload: UpdateProfileInput
+): Promise<ProfileData> => {
+  return apiFetch<ProfileData>(`/profile/update/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 };

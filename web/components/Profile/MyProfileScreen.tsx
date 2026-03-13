@@ -2,13 +2,13 @@ import {
   View,
   Text,
   Image,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Alert,
 } from "react-native";
 import { useEffect, useMemo, useState, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import WebLayout from "../common/WebLayout";
@@ -17,21 +17,20 @@ import {
   getProfile,
   updateProfile,
   getProfileByUsername,
+  type ProfileData,
 } from "@/services/profileService";
 import ColorPickerPanel from "@/components/common/ColorPickerPanel";
-
-type ProfileData = {
-  _id?: string;
-  username?: string;
-  name?: string;
-  email?: string;
-  bio?: string;
-  profilePic?: string;
-  backgroundColor?: string;
-  friends?: string[];
-  friendCount?: number;
-  postCount?: number;
-};
+import DynamicProfileForm from "./DynamicProfileForm";
+import { PROFILE_FORM_CONFIG } from "./profileFormConfig";
+import {
+  applyDefaultsFromSchema,
+  buildPayloadFromSchema,
+  getValueByPath,
+  normalizeProfileSchema,
+  setValueByPath,
+  validateBySchema,
+  type ProfileFieldSchema,
+} from "./profileFormSchema";
 
 type MyProfileScreenProps = {
   readOnly?: boolean;
@@ -50,6 +49,41 @@ function getImageUri(path?: string) {
   return `${UPLOAD_BASE}/uploads/${path}`;
 }
 
+function randomHexColor() {
+  const value = Math.floor(Math.random() * 0xffffff);
+  return `#${value.toString(16).padStart(6, "0")}`;
+}
+
+function buildSeedData(profile: ProfileData | null, user: any) {
+  return {
+    ...(profile?.dynamicProfileData || {}),
+    username: profile?.username || user?.username || "",
+    bio: profile?.bio || "",
+    role: profile?.role || user?.role || "user",
+    adminCode: profile?.adminCode || "",
+    preferences: {
+      showSocialLinks:
+        profile?.preferences?.showSocialLinks ??
+        profile?.dynamicProfileData?.preferences?.showSocialLinks ??
+        false,
+    },
+    socialLinks: {
+      facebook:
+        profile?.socialLinks?.facebook ||
+        profile?.dynamicProfileData?.socialLinks?.facebook ||
+        "",
+      instagram:
+        profile?.socialLinks?.instagram ||
+        profile?.dynamicProfileData?.socialLinks?.instagram ||
+        "",
+      github:
+        profile?.socialLinks?.github ||
+        profile?.dynamicProfileData?.socialLinks?.github ||
+        "",
+    },
+  };
+}
+
 export default function MyProfileScreen({
   readOnly = false,
   username,
@@ -62,13 +96,12 @@ export default function MyProfileScreen({
   const [showColorPicker, setShowColorPicker] = useState(false);
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [name, setName] = useState("");
-  const [bio, setBio] = useState("");
+  const [formValues, setFormValues] = useState<Record<string, any>>({});
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
   const [profilePic, setProfilePic] = useState("");
   const [backgroundColor, setBackgroundColor] = useState(DEFAULT_BG);
 
-  const [draftName, setDraftName] = useState("");
-  const [draftBio, setDraftBio] = useState("");
   const [draftProfilePic, setDraftProfilePic] = useState("");
   const [draftBackgroundColor, setDraftBackgroundColor] = useState(DEFAULT_BG);
   const [imageBase64, setImageBase64] = useState("");
@@ -76,15 +109,16 @@ export default function MyProfileScreen({
   const currentUserId = user?._id || user?.id;
   const isOwner = !readOnly;
 
-  const displayEmail = readOnly
-    ? ""
-    : profile?.email || user?.email || "No email";
+  const dynamicSchema = useMemo<ProfileFieldSchema[]>(() => {
+    const next = normalizeProfileSchema(PROFILE_FORM_CONFIG as ProfileFieldSchema[]);
+    console.log("dynamicSchema", next);
+    return next;
+  }, [JSON.stringify(PROFILE_FORM_CONFIG)]);
+
+  const displayEmail = readOnly ? "" : profile?.email || user?.email || "No email";
 
   const currentCoverColor = useMemo(
-    () =>
-      isEditing
-        ? draftBackgroundColor || DEFAULT_BG
-        : backgroundColor || DEFAULT_BG,
+    () => (isEditing ? draftBackgroundColor || DEFAULT_BG : backgroundColor || DEFAULT_BG),
     [isEditing, draftBackgroundColor, backgroundColor]
   );
 
@@ -112,22 +146,43 @@ export default function MyProfileScreen({
 
   const applyProfileToState = useCallback(
     (data: ProfileData) => {
-      const nextName =
-        data?.username || data?.name || user?.username || user?.name || "";
-      const nextBio = data?.bio || "";
       const nextProfilePic = getImageUri(data?.profilePic || "");
       const nextBg = data?.backgroundColor || DEFAULT_BG;
+      const seeded = buildSeedData(data, user);
+      const withDefaults = applyDefaultsFromSchema(dynamicSchema, seeded);
 
       setProfile(data);
-      setName(nextName);
-      setBio(nextBio);
       setProfilePic(nextProfilePic);
       setBackgroundColor(nextBg);
 
-      setDraftName(nextName);
-      setDraftBio(nextBio);
       setDraftProfilePic(nextProfilePic);
       setDraftBackgroundColor(nextBg);
+
+      setFormValues(withDefaults);
+      setFormErrors({});
+    },
+    [dynamicSchema, user]
+  );
+
+  const syncUserToStorage = useCallback(
+    async (updated: ProfileData) => {
+      try {
+        if (!user) return;
+
+        const nextUser = {
+          ...user,
+          username: updated.username || user.username,
+          email: updated.email || user.email,
+          role: updated.role || user.role,
+          profilePic: updated.profilePic || user.profilePic,
+          backgroundColor: updated.backgroundColor || user.backgroundColor,
+          friends: updated.friends || user.friends,
+        };
+
+        await AsyncStorage.setItem("@user", JSON.stringify(nextUser));
+      } catch (err) {
+        console.log("syncUserToStorage error", err);
+      }
     },
     [user]
   );
@@ -164,24 +219,36 @@ export default function MyProfileScreen({
   }, [fetchProfile, readOnly, username, currentUserId]);
 
   const handleEdit = () => {
-    if (!isOwner) return;
+    if (!isOwner || !profile) return;
 
-    setDraftName(name);
-    setDraftBio(bio);
+    const seeded = buildSeedData(profile, user);
+    const withDefaults = applyDefaultsFromSchema(dynamicSchema, seeded);
+
+    setFormValues(withDefaults);
     setDraftProfilePic(profilePic || "");
     setDraftBackgroundColor(backgroundColor || DEFAULT_BG);
     setImageBase64("");
+    setFormErrors({});
     setIsEditing(true);
   };
 
   const handleCancel = () => {
-    setDraftName(name);
-    setDraftBio(bio);
+    const seeded = buildSeedData(profile, user);
+    const withDefaults = applyDefaultsFromSchema(dynamicSchema, seeded);
+
+    setFormValues(withDefaults);
     setDraftProfilePic(profilePic || "");
     setDraftBackgroundColor(backgroundColor || DEFAULT_BG);
     setImageBase64("");
+    setFormErrors({});
     setShowColorPicker(false);
     setIsEditing(false);
+  };
+
+  const handleFieldChange = (path: string, value: any) => {
+    const nextValues = setValueByPath(formValues, path, value);
+    setFormValues(nextValues);
+    setFormErrors(validateBySchema(dynamicSchema, nextValues));
   };
 
   const handlePickImage = async () => {
@@ -190,10 +257,7 @@ export default function MyProfileScreen({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert(
-          "Permission denied",
-          "Please allow photo library access first."
-        );
+        Alert.alert("Permission denied", "Please allow photo library access first.");
         return;
       }
 
@@ -222,23 +286,42 @@ export default function MyProfileScreen({
     }
   };
 
+  const handleRandomColor = () => {
+    if (!isEditing || !isOwner) return;
+    setDraftBackgroundColor(randomHexColor());
+  };
+
   const handleSave = async () => {
     if (!currentUserId) {
       Alert.alert("Error", "User not found");
       return;
     }
 
+    const errors = validateBySchema(dynamicSchema, formValues);
+    setFormErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      Alert.alert("Validation Error", "Please check the highlighted fields");
+      return;
+    }
+
     try {
       setSaving(true);
 
+      const payload = buildPayloadFromSchema(dynamicSchema, formValues);
+
+      console.log("Dynamic profile payload:", payload);
+
       const updated = await updateProfile(currentUserId, {
-        username: draftName.trim(),
-        bio: draftBio.trim(),
+        ...payload,
+        dynamicProfileData: payload,
         backgroundColor: draftBackgroundColor || DEFAULT_BG,
         imageBase64: imageBase64 || undefined,
       });
 
       applyProfileToState(updated);
+      await syncUserToStorage(updated);
+
       setImageBase64("");
       setShowColorPicker(false);
       setIsEditing(false);
@@ -251,13 +334,53 @@ export default function MyProfileScreen({
     }
   };
 
+  const previewName = String(
+    (isEditing ? formValues.username : profile?.username) || ""
+  );
+
+  const previewBio = String(
+    (isEditing ? formValues.bio : profile?.bio) || ""
+  );
+
+  const previewRole = String(
+    (isEditing ? formValues.role : profile?.role) || "user"
+  );
+
+  const previewShowSocial = !!(
+    isEditing
+      ? getValueByPath(formValues, "preferences.showSocialLinks")
+      : profile?.preferences?.showSocialLinks
+  );
+
+  const previewFacebook = String(
+    (isEditing
+      ? getValueByPath(formValues, "socialLinks.facebook")
+      : profile?.socialLinks?.facebook) || ""
+  );
+
+  const previewInstagram = String(
+    (isEditing
+      ? getValueByPath(formValues, "socialLinks.instagram")
+      : profile?.socialLinks?.instagram) || ""
+  );
+
+  const previewGithub = String(
+    (isEditing
+      ? getValueByPath(formValues, "socialLinks.github")
+      : profile?.socialLinks?.github) || ""
+  );
+
+  const previewAdminCode = String(
+    (isEditing ? formValues.adminCode : profile?.adminCode) || ""
+  );
+
   return (
     <WebLayout>
       <ScrollView className="flex-1 px-4 py-6">
         <View className="max-w-2xl mx-auto w-full">
           <View
             className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-visible mb-4"
-            style={{ position: "relative" }}
+            style={{ position: "relative", zIndex: 1 }}
           >
             <TouchableOpacity
               activeOpacity={isEditing && isOwner ? 0.85 : 1}
@@ -295,11 +418,35 @@ export default function MyProfileScreen({
             </TouchableOpacity>
 
             {showColorPicker && isOwner && (
-              <ColorPickerPanel
-                value={draftBackgroundColor}
-                onChange={setDraftBackgroundColor}
-                onClose={() => setShowColorPicker(false)}
-              />
+              <View
+                style={{
+                  position: "absolute",
+                  top: 88,
+                  right: 16,
+                  zIndex: 9999,
+                  elevation: 9999,
+                  width: 320,
+                }}
+              >
+                <ColorPickerPanel
+                  value={draftBackgroundColor}
+                  onChange={setDraftBackgroundColor}
+                  onClose={() => setShowColorPicker(false)}
+                />
+
+                {isEditing && (
+                  <View className="pt-3">
+                    <TouchableOpacity
+                      onPress={handleRandomColor}
+                      className="bg-pink-50 border border-pink-200 rounded-xl px-4 py-3 items-center"
+                    >
+                      <Text className="text-pink-600 text-sm font-semibold">
+                        🎲 Random background color
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             )}
 
             <View className="px-8 pb-8">
@@ -340,19 +487,9 @@ export default function MyProfileScreen({
               ) : (
                 <>
                   <View className="mt-2 mb-6">
-                    {isEditing && isOwner ? (
-                      <TextInput
-                        value={draftName}
-                        onChangeText={setDraftName}
-                        placeholder="Your name"
-                        className="text-2xl font-bold text-gray-900 border-b border-pink-200 pb-1 mb-1"
-                        style={{ outline: "none" } as any}
-                      />
-                    ) : (
-                      <Text className="text-2xl font-bold text-gray-900">
-                        {name || "No name"}
-                      </Text>
-                    )}
+                    <Text className="text-2xl font-bold text-gray-900">
+                      {previewName || "No name"}
+                    </Text>
 
                     {!readOnly ? (
                       <Text className="text-gray-400 text-sm mt-0.5">
@@ -384,72 +521,84 @@ export default function MyProfileScreen({
                   </View>
 
                   <View className="mb-5">
-                    <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+                    <Text
+                      className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2"
+                      onPress={() => alert("about me!")}
+                    >
                       About
                     </Text>
-                    {isEditing && isOwner ? (
-                      <TextInput
-                        value={draftBio}
-                        onChangeText={setDraftBio}
-                        multiline
-                        numberOfLines={4}
-                        placeholder="Write something about yourself..."
-                        placeholderTextColor="#9ca3af"
-                        className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-700 text-sm leading-relaxed"
-                        style={
-                          {
-                            minHeight: 96,
-                            outline: "none",
-                            textAlignVertical: "top",
-                          } as any
-                        }
-                      />
-                    ) : (
-                      <Text className="text-gray-600 text-sm leading-relaxed">
-                        {bio || "No bio yet"}
-                      </Text>
-                    )}
+                    <Text className="text-gray-600 text-sm leading-relaxed">
+                      {previewBio || "No bio yet"}
+                    </Text>
                   </View>
+
+                  <View className="mb-5">
+                    <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+                      Profile Details
+                    </Text>
+
+                    <View className="bg-gray-50 rounded-2xl p-4 border border-gray-200 gap-3">
+                      <View>
+                        <Text className="text-xs text-gray-400">Role</Text>
+                        <Text className="text-sm text-gray-800 font-medium">
+                          {previewRole || "-"}
+                        </Text>
+                      </View>
+
+                      {previewRole === "admin" && (
+                        <View>
+                          <Text className="text-xs text-gray-400">Admin Code</Text>
+                          <Text className="text-sm text-gray-800">
+                            {previewAdminCode || "-"}
+                          </Text>
+                        </View>
+                      )}
+
+                      {previewShowSocial && (
+                        <>
+                          <View>
+                            <Text className="text-xs text-gray-400">Facebook</Text>
+                            <Text className="text-sm text-gray-800">
+                              {previewFacebook || "-"}
+                            </Text>
+                          </View>
+
+                          <View>
+                            <Text className="text-xs text-gray-400">Instagram</Text>
+                            <Text className="text-sm text-gray-800">
+                              {previewInstagram || "-"}
+                            </Text>
+                          </View>
+
+                          <View>
+                            <Text className="text-xs text-gray-400">GitHub</Text>
+                            <Text className="text-sm text-gray-800">
+                              {previewGithub || "-"}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+
+                  {isEditing && isOwner && (
+                    <View className="mb-5" style={{ zIndex: 10 }}>
+                      <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                        Dynamic Profile Form
+                      </Text>
+
+                      <DynamicProfileForm
+                        fields={dynamicSchema}
+                        values={formValues}
+                        errors={formErrors}
+                        onChange={handleFieldChange}
+                      />
+                    </View>
+                  )}
                 </>
               )}
             </View>
           </View>
-
-          {!readOnly && (
-            <View className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
-              <View className="px-6 py-4 border-b border-gray-50">
-                <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-                  Account
-                </Text>
-              </View>
-              {[
-                {
-                  icon: "🔒",
-                  label: "Privacy & Security",
-                  hint: "Password, 2FA",
-                },
-                { icon: "🎨", label: "Appearance", hint: "Theme" },
-              ].map((item, i, arr) => (
-                <TouchableOpacity
-                  key={item.label}
-                  className={`flex-row items-center px-6 py-4 ${
-                    i < arr.length - 1 ? "border-b border-gray-50" : ""
-                  }`}
-                >
-                  <Text className="text-lg mr-4">{item.icon}</Text>
-                  <View className="flex-1">
-                    <Text className="text-gray-800 font-medium text-sm">
-                      {item.label}
-                    </Text>
-                    <Text className="text-gray-400 text-xs mt-0.5">
-                      {item.hint}
-                    </Text>
-                  </View>
-                  <Text className="text-gray-300 text-lg">›</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
 
           {!readOnly &&
             (isEditing ? (
