@@ -8,6 +8,8 @@ import {
 } from "react-native";
 import type { ProfileFieldSchema } from "./profileFormSchema";
 import { getValueByPath, isFieldVisible } from "./profileFormSchema";
+import { useAppTheme } from "@/contexts/ThemeContext";
+import { Fonts, Glyphs } from "@/constants/theme";
 
 type Props = {
   fields: ProfileFieldSchema[];
@@ -33,56 +35,107 @@ function SelectField({
   required?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { theme: C } = useAppTheme();
+  const F = Fonts as any;
   const [open, setOpen] = useState(false);
 
   const selectedLabel = useMemo(() => {
-    return options.find((item) => item.value === value)?.label || "Select...";
+    return options.find((item) => item.value === value)?.label || "Select…";
   }, [options, value]);
 
   return (
     <View style={{ zIndex: 2000 }}>
-      <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+      {/* Label */}
+      <Text
+        style={{
+          fontSize: 10,
+          fontWeight: "700",
+          letterSpacing: 2.5,
+          textTransform: "uppercase",
+          color: C.mutedText,
+          marginBottom: 8,
+        }}
+      >
         {label}
-        {required ? <Text className="text-red-500"> *</Text> : null}
+        {required && <Text style={{ color: C.logout }}> *</Text>}
       </Text>
 
       <View style={{ position: "relative", zIndex: 2000 }}>
         <TouchableOpacity
           onPress={() => setOpen((prev) => !prev)}
-          className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4"
+          style={{
+            backgroundColor: C.primarySoft,
+            borderWidth: 1,
+            borderColor: open ? C.primary : C.border,
+            borderRadius: 14,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
         >
-          <Text className="text-sm text-gray-800">{selectedLabel}</Text>
+          <Text style={{ fontSize: 14, color: C.inkText, fontFamily: F?.sans }}>
+            {selectedLabel}
+          </Text>
+          <Text style={{ fontSize: 11, color: C.accent }}>
+            {open ? "▴" : "▾"}
+          </Text>
         </TouchableOpacity>
 
         {open && (
           <View
             style={{
               position: "absolute",
-              top: 58,
+              top: 54,
               left: 0,
               right: 0,
               zIndex: 9999,
               elevation: 9999,
+              backgroundColor: C.surface,
+              borderWidth: 1,
+              borderColor: C.border,
+              borderRadius: 14,
+              overflow: "hidden",
+              shadowColor: C.primary,
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.12,
+              shadowRadius: 20,
             }}
-            className="bg-white border border-gray-200 rounded-xl shadow-md overflow-hidden"
           >
             {options.map((option) => (
               <TouchableOpacity
                 key={option.value}
-                onPress={() => {
-                  onChange(option.value);
-                  setOpen(false);
+                onPress={() => { onChange(option.value); setOpen(false); }}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: C.ruledLine,
+                  backgroundColor:
+                    option.value === value ? C.primarySoft : C.surface,
                 }}
-                className="px-4 py-3 border-b border-gray-100"
               >
-                <Text className="text-sm text-gray-800">{option.label}</Text>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: option.value === value ? C.primary : C.inkText,
+                    fontWeight: option.value === value ? "600" : "400",
+                    fontFamily: F?.sans,
+                  }}
+                >
+                  {option.label}
+                  {option.value === value && ` ${Glyphs.heart}`}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
       </View>
 
-      {!!error && <Text className="text-red-500 text-xs mt-2">{error}</Text>}
+      {!!error && (
+        <Text style={{ fontSize: 12, color: C.logout, marginTop: 6 }}>{error}</Text>
+      )}
     </View>
   );
 }
@@ -95,25 +148,47 @@ function DynamicProfileForm({
   parentPath = "",
   depth = 0,
 }: Props) {
+  const { theme: C } = useAppTheme();
+  const F = Fonts as any;
+
+  const fieldLabelStyle = {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    letterSpacing: 2.5,
+    textTransform: "uppercase" as const,
+    color: C.mutedText,
+    marginBottom: 8,
+  };
+
   return (
-    <View className="gap-4">
+    <View style={{ gap: 16 }}>
       {fields.map((field) => {
         if (!isFieldVisible(field, values, parentPath)) return null;
 
         const fullName = parentPath ? `${parentPath}.${field.name}` : field.name;
-        const value = getValueByPath(values, fullName);
-        const error = errors[fullName];
+        const value    = getValueByPath(values, fullName);
+        const error    = errors[fullName];
 
+        // ── group ──────────────────────────────────────────────────────────
         if (field.type === "group") {
           return (
             <View
               key={fullName}
-              className="bg-gray-50 border border-gray-200 rounded-2xl p-4"
-              style={{ marginLeft: depth > 0 ? 8 : 0 }}
+              style={{
+                backgroundColor: C.primarySoft,
+                borderWidth: 1,
+                borderColor: C.border,
+                borderRadius: 18,
+                padding: 16,
+                marginLeft: depth > 0 ? 8 : 0,
+              }}
             >
-              <Text className="text-sm font-semibold text-gray-700 mb-3">
-                {field.label}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                <Text style={{ fontSize: 11, color: C.accent }}>{Glyphs.floral}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: C.inkText, fontFamily: F?.sans }}>
+                  {field.label}
+                </Text>
+              </View>
 
               <DynamicProfileForm
                 fields={field.fields || []}
@@ -127,27 +202,41 @@ function DynamicProfileForm({
           );
         }
 
+        // ── switch ─────────────────────────────────────────────────────────
         if (field.type === "switch") {
           return (
             <View
               key={fullName}
-              className="flex-row items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3"
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: C.surface,
+                borderWidth: 1,
+                borderColor: value ? C.border : C.ruledLine,
+                borderRadius: 14,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+              }}
             >
-              <View className="pr-4 flex-1">
-                <Text className="text-sm font-medium text-gray-800">
+              <View style={{ paddingRight: 16, flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "500", color: C.inkText, fontFamily: F?.sans }}>
                   {field.label}
-                  {field.required ? <Text className="text-red-500"> *</Text> : null}
+                  {field.required && <Text style={{ color: C.logout }}> *</Text>}
                 </Text>
               </View>
 
               <Switch
                 value={!!value}
                 onValueChange={(next) => onChange(fullName, next)}
+                trackColor={{ false: C.ruledLine, true: C.accent }}
+                thumbColor={value ? C.primary : C.mutedText}
               />
             </View>
           );
         }
 
+        // ── select ─────────────────────────────────────────────────────────
         if (field.type === "select") {
           return (
             <SelectField
@@ -162,29 +251,42 @@ function DynamicProfileForm({
           );
         }
 
+        // ── text / textarea ────────────────────────────────────────────────
         return (
           <View key={fullName}>
-            <Text className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+            <Text style={fieldLabelStyle}>
               {field.label}
-              {field.required ? <Text className="text-red-500"> *</Text> : null}
+              {field.required && <Text style={{ color: C.logout }}> *</Text>}
             </Text>
 
             <TextInput
               value={typeof value === "string" ? value : value ? String(value) : ""}
               onChangeText={(text) => onChange(fullName, text)}
               placeholder={field.placeholder}
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={C.mutedText}
               multiline={field.type === "textarea"}
               numberOfLines={field.type === "textarea" ? 4 : 1}
-              className="bg-white border border-gray-200 rounded-xl p-4 text-gray-700 text-sm"
-              style={
+              style={[
+                {
+                  backgroundColor: C.surface,
+                  borderWidth: 1,
+                  borderColor: error ? C.logout : C.border,
+                  borderRadius: 14,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  color: C.inkText,
+                  fontSize: 14,
+                  fontFamily: F?.sans,
+                },
                 field.type === "textarea"
                   ? ({ minHeight: 96, outline: "none", textAlignVertical: "top" } as any)
-                  : ({ outline: "none" } as any)
-              }
+                  : ({ outline: "none" } as any),
+              ]}
             />
 
-            {!!error && <Text className="text-red-500 text-xs mt-2">{error}</Text>}
+            {!!error && (
+              <Text style={{ fontSize: 12, color: C.logout, marginTop: 6 }}>{error}</Text>
+            )}
           </View>
         );
       })}

@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import WebLayout from "../common/WebLayout";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAppTheme } from "@/contexts/ThemeContext";
 import {
   createTodo,
   getTodos,
@@ -26,24 +27,29 @@ type Task = {
   completed: boolean;
 };
 
-const C = {
-  pink: "#ec4899",
-  pinkLight: "#fce7f3",
-  pinkMid: "#fbcfe8",
-  black: "#0a0a0a",
-  charcoal: "#1f2937",
-  muted: "#9ca3af",
-  faint: "#f9fafb",
-  white: "#ffffff",
-};
-
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function TodoPage() {
   const { user } = useAuth() as any;
+  const { theme, mode } = useAppTheme();
   const userId = user?._id || user?.id;
+
+  const C = {
+    pink: theme.primary,
+    pinkLight: theme.primarySoft2,
+    pinkMid: theme.border,
+    black: theme.text,
+    charcoal: theme.text,
+    muted: theme.mutedText,
+    faint: theme.background,
+    white: theme.surface,
+    completedText: theme.primaryStrong,
+    completedRow: mode === "dark" ? theme.primarySoft : "#fff5f9",
+    placeholder: mode === "dark" ? theme.mutedText : "#f9a8d4",
+    inactiveFilterText: mode === "dark" ? theme.mutedText : "#f472b6",
+  };
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [input, setInput] = useState("");
@@ -173,9 +179,7 @@ export default function TodoPage() {
       Alert.alert("Error", error?.message || "Failed to clear completed tasks");
     } finally {
       if (mountedRef.current) {
-        setBusyIds((p) =>
-          p.filter((id) => !done.some((t) => t.id === id))
-        );
+        setBusyIds((p) => p.filter((id) => !done.some((t) => t.id === id)));
       }
     }
   };
@@ -199,7 +203,6 @@ export default function TodoPage() {
         setProcessingId(task.id);
         addBusy(task.id);
 
-        // ให้เห็นสถานะ active -> loading ก่อน
         await wait(350);
 
         const updated = await updateTodo(task.id, { status: "complete" });
@@ -215,7 +218,6 @@ export default function TodoPage() {
 
         removeBusy(task.id);
 
-        // ให้เห็น complete ทีละอันชัดขึ้น
         await wait(220);
       }
     } catch (error: any) {
@@ -257,7 +259,6 @@ export default function TodoPage() {
   return (
     <WebLayout>
       <View style={{ maxWidth: 560, width: "100%", alignSelf: "center" }}>
-        {/* ── Header ── */}
         <View style={{ marginBottom: 36 }}>
           <View
             style={{
@@ -288,7 +289,6 @@ export default function TodoPage() {
             </Text>
           </View>
 
-          {/* Stat badges */}
           <View
             style={{
               flexDirection: "row",
@@ -317,6 +317,8 @@ export default function TodoPage() {
                 borderRadius: 10,
                 paddingHorizontal: 12,
                 paddingVertical: 5,
+                borderWidth: 1,
+                borderColor: C.pinkMid,
               }}
             >
               <Text style={{ fontSize: 12, color: C.muted, fontWeight: "600" }}>
@@ -340,7 +342,6 @@ export default function TodoPage() {
             )}
           </View>
 
-          {/* Progress bar */}
           <View style={{ paddingLeft: 16 }}>
             <View
               style={{
@@ -362,7 +363,6 @@ export default function TodoPage() {
           </View>
         </View>
 
-        {/* ── Input ── */}
         <View
           style={{
             flexDirection: "row",
@@ -382,7 +382,7 @@ export default function TodoPage() {
             value={input}
             onChangeText={setInput}
             placeholder="What needs to be done?"
-            placeholderTextColor="#f9a8d4"
+            placeholderTextColor={C.placeholder}
             onSubmitEditing={addTask}
             editable={!submitting && !processingAll}
             style={
@@ -426,7 +426,6 @@ export default function TodoPage() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Filter + action row ── */}
         <View
           style={{
             flexDirection: "row",
@@ -469,7 +468,7 @@ export default function TodoPage() {
                     style={{
                       fontSize: 13,
                       fontWeight: "700",
-                      color: active ? C.pink : "#f472b6",
+                      color: active ? C.pink : C.inactiveFilterText,
                     }}
                   >
                     {f.label}
@@ -503,7 +502,6 @@ export default function TodoPage() {
           )}
         </View>
 
-        {/* ── Task list ── */}
         <View
           style={{
             backgroundColor: C.white,
@@ -528,7 +526,7 @@ export default function TodoPage() {
               <Text
                 style={{
                   fontSize: 14,
-                  color: "#f9a8d4",
+                  color: C.completedText,
                   fontWeight: "600",
                 }}
               >
@@ -555,10 +553,9 @@ export default function TodoPage() {
                     borderBottomWidth: isLast ? 0 : 1,
                     borderBottomColor: C.pinkLight,
                     opacity: isBusy ? 0.55 : 1,
-                    backgroundColor: task.completed ? "#fff5f9" : C.white,
+                    backgroundColor: task.completed ? C.completedRow : C.white,
                   }}
                 >
-                  {/* Checkbox / loader */}
                   <TouchableOpacity
                     onPress={() => toggleTask(task.id)}
                     disabled={isBusy || processingAll}
@@ -591,12 +588,11 @@ export default function TodoPage() {
                     ) : null}
                   </TouchableOpacity>
 
-                  {/* Task text + small status */}
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{
                         fontSize: 15,
-                        color: task.completed ? "#f9a8d4" : C.charcoal,
+                        color: task.completed ? C.completedText : C.charcoal,
                         textDecorationLine: task.completed
                           ? "line-through"
                           : "none",
@@ -623,7 +619,6 @@ export default function TodoPage() {
                     )}
                   </View>
 
-                  {/* Delete */}
                   <TouchableOpacity
                     onPress={() => deleteTask(task.id)}
                     disabled={isBusy || processingAll}
@@ -659,7 +654,6 @@ export default function TodoPage() {
           )}
         </View>
 
-        {/* ── Footer actions ── */}
         {completedCount > 0 && (
           <View
             style={{

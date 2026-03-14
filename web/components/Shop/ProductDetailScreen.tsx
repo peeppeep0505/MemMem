@@ -9,6 +9,8 @@ import {
 } from "@/services/productService";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCartStore } from "@/store/useCartStore";
+import { useAppTheme } from "@/contexts/ThemeContext";
+import { Fonts, Glyphs } from "@/constants/theme";
 
 function formatPrice(value: number) {
   return `฿${value.toFixed(2)}`;
@@ -20,6 +22,27 @@ function parseCategoryParam(value?: string | string[]) {
   return value;
 }
 
+function getFriendlyProductError(err: any) {
+  const message =
+    err?.message ||
+    err?.response?.data?.message ||
+    err?.data?.message ||
+    "";
+
+  const lower = String(message).toLowerCase();
+
+  if (
+    lower.includes("cast to objectid failed") ||
+    lower.includes("product not found") ||
+    lower.includes("not found") ||
+    lower.includes("invalid product id")
+  ) {
+    return "Product not found";
+  }
+
+  return "Unable to load product";
+}
+
 export default function ProductDetailScreen() {
   const { id, q, category } = useLocalSearchParams<{
     id: string;
@@ -28,6 +51,8 @@ export default function ProductDetailScreen() {
   }>();
   const router = useRouter();
   const { addToCart } = useCartStore();
+  const { theme: C } = useAppTheme();
+  const F = Fonts as any;
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,17 +65,22 @@ export default function ProductDetailScreen() {
       try {
         setError("");
         setLoading(true);
-
         const data = await getProductById(id);
         setProduct(data);
       } catch (err: any) {
-        setError(err?.message || "Product not found");
+        setProduct(null);
+        setError(getFriendlyProductError(err));
       } finally {
         setLoading(false);
       }
     };
 
     if (id) load();
+    else {
+      setProduct(null);
+      setError("Product not found");
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -68,7 +98,7 @@ export default function ProductDetailScreen() {
   }, [id]);
 
   const handleFavorite = async () => {
-    if (!id) return;
+    if (!id || !product) return;
 
     try {
       const next = await toggleFavoriteProduct(id);
@@ -79,46 +109,51 @@ export default function ProductDetailScreen() {
   };
 
   const handleBack = () => {
-    router.push({
-      pathname: "/shop",
-      params: {
-        q: typeof q === "string" ? q : undefined,
-        category: parseCategoryParam(category) || undefined,
-        favId: id,
-        favAction: isFavorite ? "add" : "remove",
-        favTick: String(Date.now()),
-      },
-    });
+    router.back();
   };
 
   return (
     <WebLayout>
-      <View style={{ flex: 1, padding: 24, backgroundColor: "#f8fafc" }}>
-        <TouchableOpacity onPress={handleBack}>
-          <Text style={{ color: "#2563eb", fontWeight: "700" }}>Back</Text>
+      <View style={{ flex: 1, padding: 24, backgroundColor: C.background }}>
+        <TouchableOpacity
+          onPress={handleBack}
+          style={{ alignSelf: "flex-start", marginBottom: 8 }}
+        >
+          <Text style={{ color: C.primary, fontWeight: "600" }}>← Back</Text>
         </TouchableOpacity>
 
+        <View style={{ alignItems: "center", marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, color: C.accent, letterSpacing: 5 }}>
+            {`${Glyphs.sparkle} ${Glyphs.soft} ${Glyphs.heart} ${Glyphs.soft} ${Glyphs.sparkle}`}
+          </Text>
+        </View>
+
         {loading ? (
-          <View style={{ paddingTop: 40 }}>
-            <ActivityIndicator size="large" />
-            <Text style={{ marginTop: 12, color: "#6b7280" }}>Loading...</Text>
+          <View style={{ paddingTop: 40, alignItems: "center" }}>
+            <Text style={{ fontSize: 24, marginBottom: 12 }}>{Glyphs.floral}</Text>
+            <ActivityIndicator size="large" color={C.primary} />
+            <Text style={{ marginTop: 12, color: C.mutedText }}>Loading…</Text>
           </View>
         ) : error || !product ? (
           <View style={{ marginTop: 24 }}>
-            <Text style={{ color: "#b91c1c", fontSize: 16 }}>
+            <Text style={{ color: C.logout, fontSize: 16 }}>
               {error || "Product not found"}
             </Text>
           </View>
         ) : (
           <View
             style={{
-              marginTop: 20,
-              backgroundColor: "#fff",
-              borderRadius: 20,
+              marginTop: 8,
+              backgroundColor: C.surface,
+              borderRadius: 24,
               padding: 24,
               borderWidth: 1,
-              borderColor: "#e5e7eb",
+              borderColor: C.border,
               maxWidth: 720,
+              shadowColor: C.primary,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.08,
+              shadowRadius: 24,
             }}
           >
             <View
@@ -129,7 +164,15 @@ export default function ProductDetailScreen() {
                 gap: 16,
               }}
             >
-              <Text style={{ fontSize: 30, fontWeight: "800", color: "#111827", flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 28,
+                  fontWeight: "700",
+                  color: C.inkText,
+                  flex: 1,
+                  fontFamily: F?.display ?? F?.serif,
+                }}
+              >
                 {product.name}
               </Text>
 
@@ -137,68 +180,103 @@ export default function ProductDetailScreen() {
                 disabled={favoriteLoading}
                 onPress={handleFavorite}
                 style={{
-                  backgroundColor: isFavorite ? "#fee2e2" : "#f3f4f6",
+                  backgroundColor: isFavorite ? C.primarySoft2 : C.primarySoft,
                   paddingHorizontal: 14,
                   paddingVertical: 10,
                   borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: isFavorite ? C.accent : C.border,
                 }}
               >
-                <Text style={{ fontWeight: "800", color: "#111827" }}>
-                  {favoriteLoading
-                    ? "..."
-                    : isFavorite
-                    ? "❤️ Favorited"
-                    : "🤍 Mark as Favorite"}
+                <Text style={{ fontWeight: "700", color: C.inkText, fontSize: 13 }}>
+                  {favoriteLoading ? "…" : isFavorite ? `❤️ Favorited` : `🤍 Mark as Favorite`}
                 </Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={{ color: "#6b7280", marginTop: 12 }}>
+            <View
+              style={{
+                height: 1,
+                backgroundColor: C.ruledLine,
+                marginVertical: 16,
+              }}
+            />
+
+            <Text
+              style={{
+                color: C.mutedText,
+                lineHeight: 22,
+                fontFamily: F?.sans,
+              }}
+            >
               {product.description || "No description available."}
             </Text>
 
-            <Text style={{ marginTop: 16, fontSize: 20, fontWeight: "800", color: "#111827" }}>
-              {formatPrice(product.salePrice)}
-            </Text>
-
-            {product.discountPercent > 0 ? (
-              <Text style={{ color: "#9ca3af", marginTop: 6, textDecorationLine: "line-through" }}>
-                {formatPrice(product.originalPrice)}
+            <View style={{ marginTop: 16, gap: 4 }}>
+              <Text style={{ fontSize: 22, fontWeight: "700", color: C.primary }}>
+                {formatPrice(product.salePrice)}
               </Text>
-            ) : null}
+              {product.discountPercent > 0 && (
+                <Text
+                  style={{
+                    color: C.mutedText,
+                    textDecorationLine: "line-through",
+                    fontSize: 14,
+                  }}
+                >
+                  {formatPrice(product.originalPrice)}
+                </Text>
+              )}
+            </View>
 
-            <Text style={{ color: "#6b7280", marginTop: 8 }}>
-              Category: {product.category.join(", ")}
-            </Text>
-            <Text style={{ color: "#6b7280", marginTop: 4 }}>Rarity: {product.rarity}</Text>
-            <Text style={{ color: "#6b7280", marginTop: 4 }}>Stock: {product.stock}</Text>
+            <View style={{ marginTop: 14, gap: 6 }}>
+              {[
+                { label: "Category", value: product.category.join(", ") },
+                { label: "Rarity", value: product.rarity },
+                { label: "Stock", value: String(product.stock) },
+              ].map((row) => (
+                <View key={row.label} style={{ flexDirection: "row", gap: 8 }}>
+                  <Text style={{ color: C.mutedText, fontSize: 13, width: 72 }}>
+                    {row.label}
+                  </Text>
+                  <Text
+                    style={{
+                      color: C.inkText,
+                      fontSize: 13,
+                      fontWeight: "500",
+                    }}
+                  >
+                    {row.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
 
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 22, flexWrap: "wrap" }}>
+            <View
+              style={{
+                height: 1,
+                backgroundColor: C.ruledLine,
+                marginVertical: 18,
+              }}
+            />
+
+            <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
               <TouchableOpacity
                 onPress={() => addToCart(product)}
                 style={{
-                  backgroundColor: "#111827",
+                  backgroundColor: C.primary,
                   paddingVertical: 14,
-                  paddingHorizontal: 18,
+                  paddingHorizontal: 20,
                   borderRadius: 14,
                   alignSelf: "flex-start",
+                  shadowColor: C.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.28,
+                  shadowRadius: 12,
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "800" }}>Add to cart</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={handleFavorite}
-                style={{
-                  backgroundColor: isFavorite ? "#fee2e2" : "#f3f4f6",
-                  paddingVertical: 14,
-                  paddingHorizontal: 18,
-                  borderRadius: 14,
-                  alignSelf: "flex-start",
-                }}
-              >
-                <Text style={{ color: "#111827", fontWeight: "800" }}>
-                  {isFavorite ? "Remove Favorite" : "Mark as Favorite"}
+                <Text style={{ color: C.surface, fontWeight: "700" }}>
+                  {`Add to cart ${Glyphs.heart}`}
                 </Text>
               </TouchableOpacity>
             </View>

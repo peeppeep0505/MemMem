@@ -481,13 +481,13 @@ export default function AuthScreen() {
                   width: 56,
                   height: 56,
                   borderRadius: 18,
-                  backgroundColor: "#0f172a",
+                  backgroundColor: "#ffd3ef",
                   alignItems: "center",
                   justifyContent: "center",
                   marginBottom: 16,
                 }}
               >
-                <Text style={{ fontSize: 26 }}>✦</Text>
+                <Text style={{ fontSize: 26 , color: "#fcfdff"}}>✦</Text>
               </View>
 
               <Text

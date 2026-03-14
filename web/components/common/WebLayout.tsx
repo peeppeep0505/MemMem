@@ -1,16 +1,29 @@
 import { View } from "react-native";
 import Sidebar from "./Sidebar";
+import { useAppTheme } from "@/contexts/ThemeContext";
 
-export default function WebLayout({ children }: any) {
+export default function WebLayout({ children }: { children: React.ReactNode }) {
+  const { theme } = useAppTheme();
+
   return (
-    <View className="flex-row flex-1 bg-gray-50">
-
+    <View
+      style={{
+        flex: 1,
+        flexDirection: "row",
+        backgroundColor: theme.background,
+      }}
+    >
       <Sidebar />
 
-      <View className="flex-1 p-10">
+      <View
+        style={{
+          flex: 1,
+          padding: 24,
+          backgroundColor: theme.background,
+        }}
+      >
         {children}
       </View>
-
     </View>
   );
 }

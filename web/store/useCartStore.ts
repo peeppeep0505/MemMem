@@ -57,7 +57,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
             price: product.salePrice,
             quantity: 1,
             stock: product.stock,
-            category: product.category,
+            category: Array.isArray(product.category) ? product.category.join(", ") : product.category,
             rarity: product.rarity,
             imageUrl: product.imageUrl,
           },
