@@ -8,26 +8,23 @@ import {
   Alert,
   ActivityIndicator,
   useWindowDimensions,
+  TextInput,
 } from "react-native";
 import WebLayout from "../common/WebLayout";
 import CreatePost from "./CreatePost";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
-import type { Post } from "@/types/types";
+import type { Post, CommentNode } from "@/types/types";
 import ConfirmDialog from "../common/dialog/ConfirmDialog";
 import {
+  addComment,
   deletePost,
   getFriendPosts,
   getMyPosts,
   likePost,
 } from "@/services/postService";
 import { getProfile } from "@/services/profileService";
-import {
-  getFriends,
-  getFriendRequests,
-  acceptFriendRequest,
-  declineFriendRequest,
-} from "@/services/friendService";
+import { acceptFriendRequest, declineFriendRequest, getFriendRequests, getFriends } from "@/services/friendService";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,6 +119,41 @@ function formatTime(date?: string) {
   return `${diffDay}d ago`;
 }
 
+function countComments(nodes?: CommentNode[]): number {
+  if (!Array.isArray(nodes) || nodes.length === 0) return 0;
+  return nodes.reduce((sum, node) => {
+    return sum + 1 + countComments(node.replies || []);
+  }, 0);
+}
+
+function appendCommentImmutable(
+  comments: CommentNode[],
+  parentCommentId: string | undefined,
+  newComment: CommentNode
+): CommentNode[] {
+  if (!parentCommentId) {
+    return [...comments, newComment];
+  }
+
+  return comments.map((comment) => {
+    if (String(comment._id) === String(parentCommentId)) {
+      return {
+        ...comment,
+        replies: [...(comment.replies || []), newComment],
+      };
+    }
+
+    return {
+      ...comment,
+      replies: appendCommentImmutable(
+        comment.replies || [],
+        parentCommentId,
+        newComment
+      ),
+    };
+  });
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const sideCard: any = {
@@ -136,6 +168,148 @@ const sideCard: any = {
   shadowRadius: 8,
   marginBottom: 16,
 };
+
+//recursive comment
+
+type CommentItemProps = {
+  comment: CommentNode;
+  depth?: number;
+  postId: string;
+  currentUserId: string;
+  onSendReply: (postId: string, text: string, parentCommentId?: string) => Promise<void>;
+};
+
+function CommentItem({
+  comment,
+  depth = 0,
+  postId,
+  currentUserId,
+  onSendReply,
+}: CommentItemProps) {
+  const [showReplyBox, setShowReplyBox] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const marginLeft = Math.min(depth * 18, 90);
+
+  const handleReply = async () => {
+    if (!replyText.trim()) return;
+
+    try {
+      setSending(true);
+      await onSendReply(postId, replyText.trim(), comment._id);
+      setReplyText("");
+      setShowReplyBox(false);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <View style={{ marginTop: 10, marginLeft }}>
+      <View
+        style={{
+          backgroundColor: "#f8fafc",
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: "#eef2f7",
+          padding: 10,
+        }}
+      >
+        <Text style={{ fontSize: 12, fontWeight: "700", color: "#0f172a" }}>
+          @{comment.user?.username || "unknown"}
+        </Text>
+
+        <Text
+          style={{
+            fontSize: 13,
+            color: "#334155",
+            lineHeight: 19,
+            marginTop: 4,
+          }}
+        >
+          {comment.text}
+        </Text>
+
+        <View
+          style={{
+            marginTop: 8,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <Text style={{ fontSize: 11, color: "#94a3b8" }}>
+            {formatTime(comment.createdAt)}
+          </Text>
+
+          <TouchableOpacity onPress={() => setShowReplyBox((prev) => !prev)}>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748b" }}>
+              Reply
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {showReplyBox && (
+        <View style={{ marginTop: 8, marginLeft: 4 }}>
+          <TextInput
+            value={replyText}
+            onChangeText={setReplyText}
+            placeholder="Write a reply..."
+            placeholderTextColor="#94a3b8"
+            multiline
+            style={{
+              minHeight: 42,
+              borderWidth: 1,
+              borderColor: "#e2e8f0",
+              borderRadius: 12,
+              backgroundColor: "#fff",
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              fontSize: 13,
+              color: "#0f172a",
+              textAlignVertical: "top",
+              outline: "none",
+            } as any}
+          />
+
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "flex-end",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
+            <TouchableOpacity onPress={() => setShowReplyBox(false)}>
+              <Text style={{ fontSize: 12, color: "#94a3b8", fontWeight: "600" }}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity disabled={sending} onPress={handleReply}>
+              <Text style={{ fontSize: 12, color: "#0f172a", fontWeight: "700" }}>
+                {sending ? "Sending..." : "Send"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {(comment.replies || []).map((reply) => (
+        <CommentItem
+          key={reply._id}
+          comment={reply}
+          depth={depth + 1}
+          postId={postId}
+          currentUserId={currentUserId}
+          onSendReply={onSendReply}
+        />
+      ))}
+    </View>
+  );
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -158,6 +332,9 @@ export default function CommunityPage() {
   const [profile, setProfile] = useState<LoadedProfile | null>(null);
   const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
   const [myProfileBroken, setMyProfileBroken] = useState(false);
+
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [sendingCommentFor, setSendingCommentFor] = useState<string | null>(null);
 
   const userId = user?._id || "";
   const myDisplayName = profile?.username || user?.username || "you";
@@ -302,6 +479,62 @@ export default function CommunityPage() {
       Alert.alert("Error", "Failed to decline request");
     }
   };
+
+  const handleSendComment = async (
+  postId: string,
+  text: string,
+  parentCommentId?: string
+) => {
+  if (!userId || !text.trim()) return;
+
+  try {
+    setSendingCommentFor(postId);
+
+    const optimisticComment: CommentNode = {
+      _id: `temp-${Date.now()}`,
+      userId,
+      text: text.trim(),
+      createdAt: new Date().toISOString(),
+      user: {
+        _id: userId,
+        username: user?.username || "you",
+        email: user?.email || "",
+        profilePic: (user as any)?.profilePic || "",
+        backgroundColor: (user as any)?.backgroundColor || "#9ca3af",
+      },
+      replies: [],
+    };
+
+    setPosts((prev) =>
+      prev.map((post) =>
+        post._id !== postId
+          ? post
+          : {
+              ...post,
+              comments: appendCommentImmutable(
+                post.comments || [],
+                parentCommentId,
+                optimisticComment
+              ),
+            }
+      )
+    );
+
+    if (!parentCommentId) {
+      setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+    }
+
+    const updated = await addComment(postId, userId, text.trim(), parentCommentId);
+
+    setPosts((prev) => prev.map((post) => (post._id === postId ? updated : post)));
+  } catch (error) {
+    console.error("handleSendComment error:", error);
+    Alert.alert("Error", "Failed to add comment");
+    await loadPosts();
+  } finally {
+    setSendingCommentFor(null);
+  }
+};
 
   const toggleLike = async (postId: string) => {
     if (!userId) return;
@@ -679,33 +912,119 @@ export default function CommunityPage() {
                         paddingTop: 12,
                         borderTopWidth: 1,
                         borderTopColor: "#f8fafc",
-                        flexDirection: "row",
-                        alignItems: "center",
                       }}
                     >
-                      <TouchableOpacity
-                        onPress={() => toggleLike(post._id)}
+                      <View
                         style={{
                           flexDirection: "row",
                           alignItems: "center",
-                          gap: 6,
+                          justifyContent: "space-between",
                         }}
                       >
-                        <Text style={{ fontSize: 20 }}>
-                          {post.likes?.includes(userId) ? "❤️" : "🤍"}
-                        </Text>
-                        <Text
+                        <TouchableOpacity
+                          onPress={() => toggleLike(post._id)}
                           style={{
-                            fontSize: 13,
-                            fontWeight: "600",
-                            color: post.likes?.includes(userId)
-                              ? "#e11d48"
-                              : "#94a3b8",
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 6,
                           }}
                         >
-                          {post.likes?.length || 0}
+                          <Text style={{ fontSize: 20 }}>
+                            {post.likes?.includes(userId) ? "🩷" : "🤍"}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 13,
+                              fontWeight: "600",
+                              color: post.likes?.includes(userId) ? "#e11d48" : "#94a3b8",
+                            }}
+                          >
+                            {post.likes?.length || 0}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <Text style={{ fontSize: 12, color: "#94a3b8", fontWeight: "600" }}>
+                          {countComments(post.comments || [])} comments
                         </Text>
-                      </TouchableOpacity>
+                      </View>
+
+                      <View style={{ marginTop: 14 }}>
+                        <TextInput
+                          value={commentInputs[post._id] || ""}
+                          onChangeText={(value) =>
+                            setCommentInputs((prev) => ({ ...prev, [post._id]: value }))
+                          }
+                          placeholder="Write a comment..."
+                          placeholderTextColor="#94a3b8"
+                          multiline
+                          style={{
+                            minHeight: 44,
+                            borderWidth: 1,
+                            borderColor: "#e2e8f0",
+                            borderRadius: 14,
+                            backgroundColor: "#fff",
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                            fontSize: 13,
+                            color: "#0f172a",
+                            textAlignVertical: "top",
+                            outline: "none",
+                          } as any}
+                        />
+
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "flex-end",
+                            marginTop: 8,
+                          }}
+                        >
+                          <TouchableOpacity
+                            disabled={
+                              sendingCommentFor === post._id || !(commentInputs[post._id] || "").trim()
+                            }
+                            onPress={() =>
+                              handleSendComment(post._id, (commentInputs[post._id] || "").trim())
+                            }
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 8,
+                              borderRadius: 999,
+                              backgroundColor:
+                                !(commentInputs[post._id] || "").trim() || sendingCommentFor === post._id
+                                  ? "#e2e8f0"
+                                  : "#0f172a",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontWeight: "700",
+                                color:
+                                  !(commentInputs[post._id] || "").trim() || sendingCommentFor === post._id
+                                    ? "#94a3b8"
+                                    : "#fff",
+                              }}
+                            >
+                              {sendingCommentFor === post._id ? "Sending..." : "Comment"}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {(post.comments || []).length > 0 && (
+                        <View style={{ marginTop: 6 }}>
+                          {(post.comments || []).map((comment) => (
+                            <CommentItem
+                              key={comment._id}
+                              comment={comment}
+                              postId={post._id}
+                              currentUserId={userId}
+                              onSendReply={handleSendComment}
+                            />
+                          ))}
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>

@@ -42,16 +42,38 @@ export interface PostUser {
   backgroundColor?: string;
 }
 
-export interface Post {
+export type CommentNode = {
   _id: string;
   userId: string;
   text: string;
-  images: string[];
-  likes: string[];
+  createdAt?: string;
+  user?: {
+    _id: string;
+    username: string;
+    email?: string;
+    profilePic?: string;
+    backgroundColor?: string;
+  };
+  replies: CommentNode[];
+};
+
+export type Post = {
+  _id: string;
+  userId: string;
+  text?: string;
+  images?: string[];
+  likes?: string[];
+  comments?: CommentNode[];
   createdAt?: string;
   updatedAt?: string;
-  user?: PostUser;
-}
+  user?: {
+    _id: string;
+    username: string;
+    email?: string;
+    profilePic?: string;
+    backgroundColor?: string;
+  };
+};
 
 export interface CreatePostInput {
   userId: string;
