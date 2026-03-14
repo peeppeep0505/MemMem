@@ -55,6 +55,7 @@ const profileRoutes = require("./routes/profileRoutes");
 const userRoutes = require("./routes/userRoutes");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const dailyRoutes = require("./routes/dailyRoutes");
 
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
@@ -65,6 +66,7 @@ app.use("/api/todos", todoRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/daily", dailyRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

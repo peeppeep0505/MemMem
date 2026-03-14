@@ -9,6 +9,7 @@ export default function Sidebar() {
 
   const menus = [
     { label: "Diary", icon: "calendar-outline", path: "/diary" },
+    { label: "Daily Insights", icon: "bulb-outline", path: "/daily" },
     { label: "Community", icon: "images-outline", path: "/community" },
     { label: "Todo List", icon: "checkbox-outline", path: "/todolist" },
     { label: "Shop", icon: "cart-outline", path: "/shop" },
