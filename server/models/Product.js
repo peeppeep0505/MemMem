@@ -1,5 +1,19 @@
 const mongoose = require("mongoose");
 
+const ALLOWED_CATEGORIES = ["Title", "Badge", "Theme"];
+
+function normalizeCategories(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+  }
+
+  if (typeof value === "string") {
+    return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+  }
+
+  return [];
+}
+
 const productSchema = new mongoose.Schema(
   {
     name: {
@@ -14,10 +28,17 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
     category: {
-      type: String,
+      type: [String],
       required: true,
-      enum: ["Title", "Badge", "Theme"],
-      default: "Title",
+      enum: ALLOWED_CATEGORIES,
+      default: ["Title"],
+      set: normalizeCategories,
+      validate: {
+        validator: function (value) {
+          return Array.isArray(value) && value.length > 0;
+        },
+        message: "At least one category is required",
+      },
     },
     originalPrice: {
       type: Number,

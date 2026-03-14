@@ -12,8 +12,10 @@ import {
 } from "react-native";
 import WebLayout from "../common/WebLayout";
 import {
+  getFavoriteProductIds,
   getProducts,
   getProductStats,
+  toggleFavoriteProduct,
   type Product,
 } from "@/services/productService";
 import { createOrder } from "@/services/orderService";
@@ -45,6 +47,7 @@ type QueueOrder = {
 };
 
 const ORDER_QUEUE_KEY = "@shop_order_queue";
+const CATEGORY_OPTIONS = ["Title", "Badge", "Theme"] as const;
 
 function formatPrice(value: number) {
   return `฿${value.toFixed(2)}`;
@@ -61,6 +64,14 @@ function rarityColor(rarity: Product["rarity"]) {
     default:
       return "#6b7280";
   }
+}
+
+function parseCategoryParam(value?: string | string[]) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return [...new Set(value.flatMap((item) => String(item).split(",")).map((item) => item.trim()).filter(Boolean))];
+  }
+  return [...new Set(String(value).split(",").map((item) => item.trim()).filter(Boolean))];
 }
 
 function ProductSkeletonCard() {
@@ -154,7 +165,13 @@ function ProductSkeletonCard() {
 export default function ShopScreen() {
   const { isAdmin } = useAuth();
   const router = useRouter();
-  const params = useLocalSearchParams<{ q?: string; category?: string }>();
+  const params = useLocalSearchParams<{
+    q?: string;
+    category?: string | string[];
+    favId?: string;
+    favAction?: string;
+    favTick?: string;
+  }>();
   const { width } = useWindowDimensions();
   const isWide = width >= 1180;
 
@@ -165,13 +182,21 @@ export default function ShopScreen() {
     minSalePrice: 0,
     totalProducts: 0,
   });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 12,
+    totalPages: 0,
+    totalProducts: 0,
+  });
+
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
   const [syncBanner, setSyncBanner] = useState<"online" | "offline">("online");
   const [syncing, setSyncing] = useState(false);
 
@@ -201,7 +226,7 @@ export default function ShopScreen() {
   }, [params.q]);
 
   const categoryParam = useMemo(() => {
-    return typeof params.category === "string" ? params.category : "";
+    return parseCategoryParam(params.category);
   }, [params.category]);
 
   useEffect(() => {
@@ -213,11 +238,42 @@ export default function ShopScreen() {
   }, [drawerAnim, isDrawerOpen]);
 
   useEffect(() => {
+    const loadFavorites = async () => {
+      const ids = await getFavoriteProductIds();
+      setFavoriteIds(ids);
+    };
+
+    loadFavorites();
+  }, []);
+
+  useEffect(() => {
     setQuery((prev) => (prev === qParam ? prev : qParam));
     setDebouncedQuery((prev) => (prev === qParam ? prev : qParam));
-    setCategory((prev) => (prev === categoryParam ? prev : categoryParam));
+    setCategories((prev) => {
+      const prevKey = prev.join(",");
+      const nextKey = categoryParam.join(",");
+      return prevKey === nextKey ? prev : categoryParam;
+    });
     hasHydratedFromUrlRef.current = true;
   }, [qParam, categoryParam]);
+
+  useEffect(() => {
+    if (!params.favId || !params.favAction || !params.favTick) return;
+
+    setFavoriteIds((prev) => {
+      const exists = prev.includes(params.favId!);
+
+      if (params.favAction === "add" && !exists) {
+        return [...prev, params.favId!];
+      }
+
+      if (params.favAction === "remove" && exists) {
+        return prev.filter((id) => id !== params.favId);
+      }
+
+      return prev;
+    });
+  }, [params.favId, params.favAction, params.favTick]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -236,27 +292,33 @@ export default function ShopScreen() {
     if (!hasHydratedFromUrlRef.current) return;
 
     const nextQ = debouncedQuery.trim();
-    const nextCategory = category;
+    const nextCategory = categories.join(",");
 
-    if (nextQ === qParam && nextCategory === categoryParam) return;
+    if (nextQ === qParam && nextCategory === categoryParam.join(",")) return;
 
     router.setParams({
       q: nextQ || undefined,
       category: nextCategory || undefined,
     });
-  }, [debouncedQuery, category, qParam, categoryParam, router]);
+  }, [debouncedQuery, categories, qParam, categoryParam, router]);
 
   const fetchAll = useCallback(async () => {
     try {
       setError("");
       setFetching(true);
 
-      const [productData, statsData] = await Promise.all([
-        getProducts({ q: debouncedQuery, category }),
+      const [productRes, statsData] = await Promise.all([
+        getProducts({ q: debouncedQuery, category: categories, page: 1, limit: 12 }),
         getProductStats(),
       ]);
 
-      setProducts(productData);
+      setProducts(productRes.data);
+      setPagination({
+        page: productRes.metadata.page,
+        limit: productRes.metadata.limit,
+        totalPages: productRes.metadata.totalPages,
+        totalProducts: productRes.metadata.totalProducts,
+      });
       setStats(statsData);
     } catch (err: any) {
       setError(err?.message || "Failed to load products");
@@ -264,7 +326,7 @@ export default function ShopScreen() {
       setLoading(false);
       setFetching(false);
     }
-  }, [debouncedQuery, category]);
+  }, [debouncedQuery, categories]);
 
   useEffect(() => {
     fetchAll();
@@ -299,6 +361,32 @@ export default function ShopScreen() {
 
     return () => unsubscribe();
   }, [syncQueue]);
+
+  const handleToggleCategory = (value: string) => {
+    if (!value) {
+      setCategories([]);
+      return;
+    }
+
+    setCategories((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    );
+  };
+
+  const handleToggleFavorite = async (productId: string) => {
+    try {
+      const nextIsFavorite = await toggleFavoriteProduct(productId);
+
+      setFavoriteIds((prev) => {
+        if (nextIsFavorite) {
+          return prev.includes(productId) ? prev : [...prev, productId];
+        }
+        return prev.filter((id) => id !== productId);
+      });
+    } catch (err: any) {
+      setError(err?.message || "Failed to update favorite");
+    }
+  };
 
   const handleCheckout = async () => {
     if (!items.length) return;
@@ -358,9 +446,10 @@ export default function ShopScreen() {
   };
 
   const emptyText = useMemo(() => {
-    if (!debouncedQuery) return "No products available";
-    return `No products found for '${debouncedQuery}'`;
-  }, [debouncedQuery]);
+    const tagText = categories.length ? ` in [${categories.join(", ")}]` : "";
+    if (!debouncedQuery) return `No products available${tagText}`;
+    return `No products found for '${debouncedQuery}'${tagText}`;
+  }, [debouncedQuery, categories]);
 
   const drawerTranslateX = drawerAnim.interpolate({
     inputRange: [0, 1],
@@ -653,6 +742,22 @@ export default function ShopScreen() {
                   {formatPrice(stats.avgSalePrice)}
                 </Text>
               </View>
+
+              <View
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 16,
+                  padding: 16,
+                  minWidth: 180,
+                  borderWidth: 1,
+                  borderColor: "#e5e7eb",
+                }}
+              >
+                <Text style={{ color: "#6b7280" }}>Matched results</Text>
+                <Text style={{ fontSize: 24, fontWeight: "800", color: "#111827" }}>
+                  {pagination.totalProducts}
+                </Text>
+              </View>
             </View>
 
             <View
@@ -681,31 +786,62 @@ export default function ShopScreen() {
               />
 
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                {["", "Title", "Badge", "Theme"].map((item) => (
-                  <TouchableOpacity
-                    key={item || "all"}
-                    onPress={() => setCategory(item)}
+                <TouchableOpacity
+                  onPress={() => handleToggleCategory("")}
+                  style={{
+                    backgroundColor: categories.length === 0 ? "#111827" : "#fff",
+                    borderRadius: 999,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderWidth: 1,
+                    borderColor: categories.length === 0 ? "#111827" : "#d1d5db",
+                  }}
+                >
+                  <Text
                     style={{
-                      backgroundColor: category === item ? "#111827" : "#fff",
-                      borderRadius: 999,
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      borderWidth: 1,
-                      borderColor: category === item ? "#111827" : "#d1d5db",
+                      color: categories.length === 0 ? "#fff" : "#111827",
+                      fontWeight: "700",
                     }}
                   >
-                    <Text
+                    All
+                  </Text>
+                </TouchableOpacity>
+
+                {CATEGORY_OPTIONS.map((item) => {
+                  const active = categories.includes(item);
+
+                  return (
+                    <TouchableOpacity
+                      key={item}
+                      onPress={() => handleToggleCategory(item)}
                       style={{
-                        color: category === item ? "#fff" : "#111827",
-                        fontWeight: "700",
+                        backgroundColor: active ? "#111827" : "#fff",
+                        borderRadius: 999,
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        borderWidth: 1,
+                        borderColor: active ? "#111827" : "#d1d5db",
                       }}
                     >
-                      {item || "All"}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={{
+                          color: active ? "#fff" : "#111827",
+                          fontWeight: "700",
+                        }}
+                      >
+                        {item}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
+
+            {!!categories.length ? (
+              <Text style={{ marginTop: 12, color: "#4b5563" }}>
+                Exact tag match: {categories.join(", ")}
+              </Text>
+            ) : null}
 
             {error ? (
               <View
@@ -748,92 +884,140 @@ export default function ShopScreen() {
                   <Text style={{ fontSize: 16, color: "#374151" }}>{emptyText}</Text>
                 </View>
               ) : (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-                  {products.map((product) => (
-                    <View
-                      key={product._id}
-                      style={{
-                        width: 280,
-                        backgroundColor: "#fff",
-                        borderRadius: 20,
-                        padding: 18,
-                        borderWidth: 1,
-                        borderColor: "#e5e7eb",
-                      }}
-                    >
-                      <View
-                        style={{
-                          alignSelf: "flex-start",
-                          backgroundColor: "#f3f4f6",
-                          paddingHorizontal: 10,
-                          paddingVertical: 6,
-                          borderRadius: 999,
-                          marginBottom: 12,
-                        }}
-                      >
-                        <Text style={{ color: rarityColor(product.rarity), fontWeight: "700" }}>
-                          {product.rarity}
-                        </Text>
-                      </View>
+                <>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+                    {products.map((product) => {
+                      const isFavorite = favoriteIds.includes(product._id);
 
-                      <Text style={{ fontSize: 18, fontWeight: "800", color: "#111827" }}>
-                        {product.name}
-                      </Text>
-                      <Text style={{ color: "#6b7280", marginTop: 6, minHeight: 40 }}>
-                        {product.description || "Special profile title for your MemMem identity."}
-                      </Text>
-
-                      <View style={{ marginTop: 12, gap: 4 }}>
-                        <Text style={{ color: "#111827", fontSize: 18, fontWeight: "800" }}>
-                          {formatPrice(product.salePrice)}
-                        </Text>
-                        {product.discountPercent > 0 ? (
-                          <Text style={{ color: "#9ca3af", textDecorationLine: "line-through" }}>
-                            {formatPrice(product.originalPrice)}
-                          </Text>
-                        ) : null}
-                        <Text style={{ color: "#6b7280" }}>Stock: {product.stock}</Text>
-                        <Text style={{ color: "#6b7280" }}>Category: {product.category}</Text>
-                      </View>
-
-                      <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-                        <TouchableOpacity
-                          onPress={() =>
-                            router.push({
-                              pathname: "/shop/[id]",
-                              params: { id: product._id },
-                            })
-                          }
+                      return (
+                        <View
+                          key={product._id}
                           style={{
-                            flex: 1,
-                            backgroundColor: "#f3f4f6",
-                            paddingVertical: 12,
-                            borderRadius: 12,
-                            alignItems: "center",
+                            width: 280,
+                            backgroundColor: "#fff",
+                            borderRadius: 20,
+                            padding: 18,
+                            borderWidth: 1,
+                            borderColor: "#e5e7eb",
                           }}
                         >
-                          <Text style={{ color: "#111827", fontWeight: "700" }}>View</Text>
-                        </TouchableOpacity>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              marginBottom: 12,
+                              gap: 10,
+                            }}
+                          >
+                            <View
+                              style={{
+                                alignSelf: "flex-start",
+                                backgroundColor: "#f3f4f6",
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                                borderRadius: 999,
+                              }}
+                            >
+                              <Text style={{ color: rarityColor(product.rarity), fontWeight: "700" }}>
+                                {product.rarity}
+                              </Text>
+                            </View>
 
-                        <TouchableOpacity
-                          disabled={product.stock <= 0}
-                          onPress={() => addToCart(product)}
-                          style={{
-                            flex: 1,
-                            backgroundColor: product.stock <= 0 ? "#d1d5db" : "#111827",
-                            paddingVertical: 12,
-                            borderRadius: 12,
-                            alignItems: "center",
-                          }}
-                        >
-                          <Text style={{ color: "#fff", fontWeight: "700" }}>
-                            {product.stock <= 0 ? "Out of stock" : "Add to cart"}
+                            <TouchableOpacity
+                              onPress={() => handleToggleFavorite(product._id)}
+                              style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 999,
+                                backgroundColor: isFavorite ? "#fee2e2" : "#f3f4f6",
+                                justifyContent: "center",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Text style={{ fontSize: 16 }}>
+                                {isFavorite ? "❤️" : "🤍"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <Text style={{ fontSize: 18, fontWeight: "800", color: "#111827" }}>
+                            {product.name}
                           </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </View>
+                          <Text style={{ color: "#6b7280", marginTop: 6, minHeight: 40 }}>
+                            {product.description || "Special profile title for your MemMem identity."}
+                          </Text>
+
+                          <View style={{ marginTop: 12, gap: 4 }}>
+                            <Text style={{ color: "#111827", fontSize: 18, fontWeight: "800" }}>
+                              {formatPrice(product.salePrice)}
+                            </Text>
+                            {product.discountPercent > 0 ? (
+                              <Text style={{ color: "#9ca3af", textDecorationLine: "line-through" }}>
+                                {formatPrice(product.originalPrice)}
+                              </Text>
+                            ) : null}
+                            <Text style={{ color: "#6b7280" }}>Stock: {product.stock}</Text>
+                            <Text style={{ color: "#6b7280" }}>
+                              Category: {product.category.join(", ")}
+                            </Text>
+                            {isFavorite ? (
+                              <Text style={{ color: "#dc2626", fontWeight: "700" }}>
+                                Favorite ❤️
+                              </Text>
+                            ) : null}
+                          </View>
+
+                          <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                            <TouchableOpacity
+                              onPress={() =>
+                                router.push({
+                                  pathname: "/shop/[id]",
+                                  params: {
+                                    id: product._id,
+                                    q: debouncedQuery || undefined,
+                                    category: categories.join(",") || undefined,
+                                  },
+                                })
+                              }
+                              style={{
+                                flex: 1,
+                                backgroundColor: "#f3f4f6",
+                                paddingVertical: 12,
+                                borderRadius: 12,
+                                alignItems: "center",
+                              }}
+                            >
+                              <Text style={{ color: "#111827", fontWeight: "700" }}>View</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              disabled={product.stock <= 0}
+                              onPress={() => addToCart(product)}
+                              style={{
+                                flex: 1,
+                                backgroundColor: product.stock <= 0 ? "#d1d5db" : "#111827",
+                                paddingVertical: 12,
+                                borderRadius: 12,
+                                alignItems: "center",
+                              }}
+                            >
+                              <Text style={{ color: "#fff", fontWeight: "700" }}>
+                                {product.stock <= 0 ? "Out of stock" : "Add to cart"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  <View style={{ marginTop: 18 }}>
+                    <Text style={{ color: "#6b7280" }}>
+                      Page {pagination.page} / {pagination.totalPages || 1} • Limit {pagination.limit}
+                    </Text>
+                  </View>
+                </>
               )}
             </View>
           </ScrollView>

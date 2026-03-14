@@ -23,8 +23,112 @@ type ToastState = {
   message: string;
 } | null;
 
+const CATEGORY_OPTIONS = ["Title", "Badge", "Theme"] as const;
+
+// เปลี่ยนเป็น true ถ้าต้องการใช้ mock data ตอน backend ยังไม่พร้อม
+const USE_MOCK_DATA = false;
+
+const MOCK_PRODUCTS: Product[] = [
+  {
+    _id: "mock-1",
+    name: "Pro Coder",
+    description: "Special title for users who love coding every day.",
+    category: ["Title"],
+    originalPrice: 120,
+    discountPercent: 10,
+    salePrice: 108,
+    stock: 25,
+    imageUrl: "",
+    rarity: "Common",
+    isActive: true,
+    createdAt: "2026-03-14T00:00:00.000Z",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+  },
+  {
+    _id: "mock-2",
+    name: "Bug Hunter",
+    description: "A rare badge for fearless debuggers.",
+    category: ["Badge"],
+    originalPrice: 250,
+    discountPercent: 20,
+    salePrice: 200,
+    stock: 12,
+    imageUrl: "",
+    rarity: "Rare",
+    isActive: true,
+    createdAt: "2026-03-14T00:00:00.000Z",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+  },
+  {
+    _id: "mock-3",
+    name: "Galaxy Theme",
+    description: "A premium profile theme with cosmic vibes.",
+    category: ["Theme"],
+    originalPrice: 450,
+    discountPercent: 15,
+    salePrice: 382.5,
+    stock: 8,
+    imageUrl: "",
+    rarity: "Epic",
+    isActive: true,
+    createdAt: "2026-03-14T00:00:00.000Z",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+  },
+  {
+    _id: "mock-4",
+    name: "Legend Dev Pack",
+    description: "Includes both a title and badge for legendary members.",
+    category: ["Title", "Badge"],
+    originalPrice: 790,
+    discountPercent: 25,
+    salePrice: 592.5,
+    stock: 5,
+    imageUrl: "",
+    rarity: "Legendary",
+    isActive: true,
+    createdAt: "2026-03-14T00:00:00.000Z",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+  },
+  {
+    _id: "mock-5",
+    name: "Dark Neon Pack",
+    description: "Theme and badge combo for night mode lovers.",
+    category: ["Badge", "Theme"],
+    originalPrice: 680,
+    discountPercent: 10,
+    salePrice: 612,
+    stock: 0,
+    imageUrl: "",
+    rarity: "Epic",
+    isActive: false,
+    createdAt: "2026-03-14T00:00:00.000Z",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+  },
+];
+
 function formatPrice(value: number) {
   return `฿${value.toFixed(2)}`;
+}
+
+function matchMockProducts(
+  products: Product[],
+  query: string,
+  categories: string[]
+): Product[] {
+  const q = query.trim().toLowerCase();
+
+  return products.filter((product) => {
+    const matchQuery =
+      !q ||
+      product.name.toLowerCase().includes(q) ||
+      (product.description || "").toLowerCase().includes(q);
+
+    const matchCategory =
+      categories.length === 0 ||
+      categories.every((cat) => product.category.includes(cat as any));
+
+    return matchQuery && matchCategory;
+  });
 }
 
 export default function AdminProductManagementScreen() {
@@ -36,26 +140,59 @@ export default function AdminProductManagementScreen() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState<ToastState>(null);
   const [query, setQuery] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [pageInfo, setPageInfo] = useState({
+    page: 1,
+    limit: 12,
+    totalPages: 0,
+    totalProducts: 0,
+  });
 
   const loadProducts = useCallback(async () => {
     try {
       setError("");
       setFetching(true);
 
-      const data = await getProducts({
+      if (USE_MOCK_DATA) {
+        const filtered = matchMockProducts(
+          MOCK_PRODUCTS,
+          query,
+          selectedCategories
+        );
+
+        setProducts(filtered);
+        setPageInfo({
+          page: 1,
+          limit: filtered.length || 12,
+          totalPages: filtered.length ? 1 : 0,
+          totalProducts: filtered.length,
+        });
+        return;
+      }
+
+      const response = await getProducts({
         q: query.trim(),
+        category: selectedCategories,
         activeOnly: "false",
         sort: "newest",
+        page: 1,
+        limit: 50,
       });
 
-      setProducts(data);
+      setProducts(response.data);
+      setPageInfo({
+        page: response.metadata.page,
+        limit: response.metadata.limit,
+        totalPages: response.metadata.totalPages,
+        totalProducts: response.metadata.totalProducts,
+      });
     } catch (err: any) {
       setError(err?.message || "Failed to load products");
     } finally {
       setLoading(false);
       setFetching(false);
     }
-  }, [query]);
+  }, [query, selectedCategories]);
 
   useEffect(() => {
     if (!authLoading && !hasRole("editor", "manager")) {
@@ -85,6 +222,14 @@ export default function AdminProductManagementScreen() {
     [products]
   );
 
+  const handleToggleCategory = (category: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(category)
+        ? prev.filter((item) => item !== category)
+        : [...prev, category]
+    );
+  };
+
   const handleToggleActive = async (product: Product) => {
     const previousItems = [...products];
     const nextActive = !product.isActive;
@@ -101,11 +246,14 @@ export default function AdminProductManagementScreen() {
     );
 
     try {
-      await withRetry(() =>
-        updateProduct(product._id, {
-          isActive: nextActive,
-        })
-      );
+      if (!USE_MOCK_DATA) {
+        await withRetry(() =>
+          updateProduct(product._id, {
+            isActive: nextActive,
+          })
+        );
+      }
+
       setToast({
         type: "success",
         message: "บันทึกสถานะสินค้าเรียบร้อย",
@@ -130,7 +278,10 @@ export default function AdminProductManagementScreen() {
     setProducts((prev) => prev.filter((item) => item._id !== product._id));
 
     try {
-      await withRetry(() => archiveProduct(product._id));
+      if (!USE_MOCK_DATA) {
+        await withRetry(() => archiveProduct(product._id));
+      }
+
       setToast({
         type: "success",
         message: "ลบสินค้าเรียบร้อย",
@@ -223,9 +374,9 @@ export default function AdminProductManagementScreen() {
               borderColor: "#e5e7eb",
             }}
           >
-            <Text style={{ color: "#6b7280" }}>All Products</Text>
+            <Text style={{ color: "#6b7280" }}>Matched Products</Text>
             <Text style={{ fontSize: 24, fontWeight: "800", color: "#111827" }}>
-              {products.length}
+              {pageInfo.totalProducts}
             </Text>
           </View>
 
@@ -262,7 +413,7 @@ export default function AdminProductManagementScreen() {
           </View>
         </View>
 
-        <View style={{ marginTop: 18 }}>
+        <View style={{ marginTop: 18, gap: 12 }}>
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -277,6 +428,64 @@ export default function AdminProductManagementScreen() {
               maxWidth: 420,
             }}
           />
+
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+            <TouchableOpacity
+              onPress={() => setSelectedCategories([])}
+              style={{
+                backgroundColor: selectedCategories.length === 0 ? "#111827" : "#fff",
+                borderRadius: 999,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderWidth: 1,
+                borderColor:
+                  selectedCategories.length === 0 ? "#111827" : "#d1d5db",
+              }}
+            >
+              <Text
+                style={{
+                  color: selectedCategories.length === 0 ? "#fff" : "#111827",
+                  fontWeight: "700",
+                }}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+
+            {CATEGORY_OPTIONS.map((item) => {
+              const active = selectedCategories.includes(item);
+
+              return (
+                <TouchableOpacity
+                  key={item}
+                  onPress={() => handleToggleCategory(item)}
+                  style={{
+                    backgroundColor: active ? "#111827" : "#fff",
+                    borderRadius: 999,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderWidth: 1,
+                    borderColor: active ? "#111827" : "#d1d5db",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: active ? "#fff" : "#111827",
+                      fontWeight: "700",
+                    }}
+                  >
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {!!selectedCategories.length ? (
+            <Text style={{ color: "#4b5563" }}>
+              Exact tag match: {selectedCategories.join(", ")}
+            </Text>
+          ) : null}
         </View>
 
         {toast ? (
@@ -395,9 +604,13 @@ export default function AdminProductManagementScreen() {
                 </View>
 
                 <View style={{ flexDirection: "row", gap: 18, flexWrap: "wrap", marginTop: 14 }}>
-                  <Text style={{ color: "#374151" }}>Price: {formatPrice(product.salePrice)}</Text>
+                  <Text style={{ color: "#374151" }}>
+                    Price: {formatPrice(product.salePrice)}
+                  </Text>
                   <Text style={{ color: "#374151" }}>Stock: {product.stock}</Text>
-                  <Text style={{ color: "#374151" }}>Category: {product.category}</Text>
+                  <Text style={{ color: "#374151" }}>
+                    Category: {product.category.join(", ")}
+                  </Text>
                   <Text style={{ color: "#374151" }}>Rarity: {product.rarity}</Text>
                 </View>
 

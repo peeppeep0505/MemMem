@@ -1,10 +1,11 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiFetch } from "./api";
 
 export interface Product {
   _id: string;
   name: string;
   description?: string;
-  category: "Title" | "Badge" | "Theme";
+  category: ("Title" | "Badge" | "Theme")[];
   originalPrice: number;
   discountPercent: number;
   salePrice: number;
@@ -18,12 +19,14 @@ export interface Product {
 
 export interface ProductQuery {
   q?: string;
-  category?: string;
+  category?: string | string[];
   rarity?: string;
   minPrice?: number;
   maxPrice?: number;
   sort?: string;
   activeOnly?: boolean | string;
+  page?: number;
+  limit?: number;
 }
 
 export interface ProductStats {
@@ -33,13 +36,34 @@ export interface ProductStats {
   totalProducts: number;
 }
 
+export interface ProductListResponse {
+  data: Product[];
+  metadata: {
+    page: number;
+    limit: number;
+    totalPosts: number;
+    totalProducts: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+}
+
+const FAVORITE_PRODUCT_IDS_KEY = "@favorite_product_ids";
+
 function toQueryString(params: Record<string, any>) {
   const sp = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== "") {
-      sp.append(key, String(value));
+    if (value === undefined || value === null || value === "") return;
+
+    if (Array.isArray(value)) {
+      if (!value.length) return;
+      sp.append(key, value.join(","));
+      return;
     }
+
+    sp.append(key, String(value));
   });
 
   const qs = sp.toString();
@@ -47,7 +71,7 @@ function toQueryString(params: Record<string, any>) {
 }
 
 export const getProducts = (query: ProductQuery = {}) => {
-  return apiFetch<Product[]>(`/products${toQueryString(query)}`);
+  return apiFetch<ProductListResponse>(`/products${toQueryString(query)}`);
 };
 
 export const getProductById = (productId: string) => {
@@ -73,6 +97,33 @@ export const archiveProduct = (productId: string) => {
     method: "DELETE",
   });
 };
+
+export async function getFavoriteProductIds(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(FAVORITE_PRODUCT_IDS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function toggleFavoriteProduct(productId: string): Promise<boolean> {
+  const current = await getFavoriteProductIds();
+  const exists = current.includes(productId);
+
+  const next = exists
+    ? current.filter((id) => id !== productId)
+    : [...current, productId];
+
+  await AsyncStorage.setItem(FAVORITE_PRODUCT_IDS_KEY, JSON.stringify(next));
+  return !exists;
+}
+
+export async function isFavoriteProduct(productId: string): Promise<boolean> {
+  const ids = await getFavoriteProductIds();
+  return ids.includes(productId);
+}
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
