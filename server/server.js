@@ -5,6 +5,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const connectDB = require("./config/db");
 
+
 const app = express();
 
 connectDB();
@@ -56,6 +57,7 @@ const userRoutes = require("./routes/userRoutes");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const dailyRoutes = require("./routes/dailyRoutes");
+const fileStreamRoutes = require("./routes/fileStreamRoutes");
 
 app.use("/api/users", userRoutes);
 app.use("/api/auth", authRoutes);
@@ -67,6 +69,7 @@ app.use("/api/profile", profileRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/daily", dailyRoutes);
+app.use("/api/files", fileStreamRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
