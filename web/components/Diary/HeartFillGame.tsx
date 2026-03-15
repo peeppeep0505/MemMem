@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useId, useMemo, useState } from "react";
 
 type HeartTier = "pink" | "bronze" | "gold";
 
 const MAX_SCORE = 150;
 const HEART_SIZE = 96;
+const HEART_PATH =
+  "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 
 function getTier(score: number): HeartTier {
   if (score >= 100) return "gold";
@@ -35,18 +37,23 @@ export default function HeartFillGame() {
   const color = useMemo(() => getTierColor(tier), [tier]);
   const fillPercent = useMemo(() => getFillPercent(score), [score]);
 
+  const rawId = useId().replace(/:/g, "");
+  const gradientId = `heart-gradient-${rawId}`;
+
+  const left = Math.max(0, 50 - fillPercent / 2);
+  const right = Math.min(100, 50 + fillPercent / 2);
+
   const handlePress = () => {
     const random = Math.floor(Math.random() * 12) + 4;
     setScore((prev) => Math.min(prev + random, MAX_SCORE));
   };
 
-  const fillWidth = `${fillPercent}%`;
-  const fillLeft = `${50 - fillPercent / 2}%`;
-
   return (
     <button
       onClick={handlePress}
       type="button"
+      aria-label="Increase heart level"
+      title="Click to fill heart"
       style={{
         all: "unset",
         cursor: "pointer",
@@ -56,8 +63,6 @@ export default function HeartFillGame() {
         justifyContent: "center",
         userSelect: "none",
       }}
-      aria-label="Increase heart level"
-      title="Click to fill heart"
     >
       <div
         style={{
@@ -75,42 +80,52 @@ export default function HeartFillGame() {
           width={HEART_SIZE}
           height={HEART_SIZE}
           style={{
-            position: "absolute",
-            inset: 0,
-            overflow: "visible",
+            display: "block",
           }}
         >
           <defs>
-            <clipPath id="heartClip">
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-            </clipPath>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="transparent" />
+              <stop
+                offset={`${left}%`}
+                stopColor="transparent"
+                style={{ transition: "offset 360ms cubic-bezier(0.22, 1, 0.36, 1)" }}
+              />
+              <stop
+                offset={`${left}%`}
+                stopColor={color}
+                style={{
+                  transition:
+                    "offset 360ms cubic-bezier(0.22, 1, 0.36, 1), stop-color 240ms ease",
+                }}
+              />
+              <stop
+                offset={`${right}%`}
+                stopColor={color}
+                style={{
+                  transition:
+                    "offset 360ms cubic-bezier(0.22, 1, 0.36, 1), stop-color 240ms ease",
+                }}
+              />
+              <stop
+                offset={`${right}%`}
+                stopColor="transparent"
+                style={{ transition: "offset 360ms cubic-bezier(0.22, 1, 0.36, 1)" }}
+              />
+              <stop offset="100%" stopColor="transparent" />
+            </linearGradient>
           </defs>
 
-          <path
-            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-            fill="#f3f4f6"
-            stroke="#d1d5db"
-            strokeWidth="1"
-          />
+          <path d={HEART_PATH} fill="#f3f4f6" />
 
-          <g clipPath="url(#heartClip)">
-            <rect
-              x={fillLeft}
-              y="0"
-              width={fillWidth}
-              height="24"
-              fill={color}
-              style={{
-                transition: "all 360ms cubic-bezier(0.22, 1, 0.36, 1)",
-              }}
-            />
-          </g>
+          <path d={HEART_PATH} fill={`url(#${gradientId})`} />
 
           <path
-            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            d={HEART_PATH}
             fill="none"
             stroke="#d1d5db"
             strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
           />
         </svg>
       </div>
