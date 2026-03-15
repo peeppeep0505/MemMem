@@ -318,6 +318,9 @@ export default function CommunityPage() {
   const { user } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
 
+  // Responsive breakpoint
+  const isMobile = windowWidth < 768;
+
   const [posts, setPosts] = useState<Post[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [filter, setFilter] = useState<FeedFilter>("friends");
@@ -344,7 +347,7 @@ export default function CommunityPage() {
 
   const postImageWidth = useMemo(() => {
     if (windowWidth <= 768) {
-      return Math.max(280, windowWidth - 64);
+      return Math.max(280, windowWidth - 32);
     }
     return 518;
   }, [windowWidth]);
@@ -481,60 +484,60 @@ export default function CommunityPage() {
   };
 
   const handleSendComment = async (
-  postId: string,
-  text: string,
-  parentCommentId?: string
-) => {
-  if (!userId || !text.trim()) return;
+    postId: string,
+    text: string,
+    parentCommentId?: string
+  ) => {
+    if (!userId || !text.trim()) return;
 
-  try {
-    setSendingCommentFor(postId);
+    try {
+      setSendingCommentFor(postId);
 
-    const optimisticComment: CommentNode = {
-      _id: `temp-${Date.now()}`,
-      userId,
-      text: text.trim(),
-      createdAt: new Date().toISOString(),
-      user: {
-        _id: userId,
-        username: user?.username || "you",
-        email: user?.email || "",
-        profilePic: (user as any)?.profilePic || "",
-        backgroundColor: (user as any)?.backgroundColor || "#9ca3af",
-      },
-      replies: [],
-    };
+      const optimisticComment: CommentNode = {
+        _id: `temp-${Date.now()}`,
+        userId,
+        text: text.trim(),
+        createdAt: new Date().toISOString(),
+        user: {
+          _id: userId,
+          username: user?.username || "you",
+          email: user?.email || "",
+          profilePic: (user as any)?.profilePic || "",
+          backgroundColor: (user as any)?.backgroundColor || "#9ca3af",
+        },
+        replies: [],
+      };
 
-    setPosts((prev) =>
-      prev.map((post) =>
-        post._id !== postId
-          ? post
-          : {
-              ...post,
-              comments: appendCommentImmutable(
-                post.comments || [],
-                parentCommentId,
-                optimisticComment
-              ),
-            }
-      )
-    );
+      setPosts((prev) =>
+        prev.map((post) =>
+          post._id !== postId
+            ? post
+            : {
+                ...post,
+                comments: appendCommentImmutable(
+                  post.comments || [],
+                  parentCommentId,
+                  optimisticComment
+                ),
+              }
+        )
+      );
 
-    if (!parentCommentId) {
-      setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+      if (!parentCommentId) {
+        setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+      }
+
+      const updated = await addComment(postId, userId, text.trim(), parentCommentId);
+
+      setPosts((prev) => prev.map((post) => (post._id === postId ? updated : post)));
+    } catch (error) {
+      console.error("handleSendComment error:", error);
+      Alert.alert("Error", "Failed to add comment");
+      await loadPosts();
+    } finally {
+      setSendingCommentFor(null);
     }
-
-    const updated = await addComment(postId, userId, text.trim(), parentCommentId);
-
-    setPosts((prev) => prev.map((post) => (post._id === postId ? updated : post)));
-  } catch (error) {
-    console.error("handleSendComment error:", error);
-    Alert.alert("Error", "Failed to add comment");
-    await loadPosts();
-  } finally {
-    setSendingCommentFor(null);
-  }
-};
+  };
 
   const toggleLike = async (postId: string) => {
     if (!userId) return;
@@ -562,6 +565,485 @@ export default function CommunityPage() {
     [posts, userId]
   );
 
+  // ─── Sidebar content (desktop only) ────────────────────────────────────────
+
+  const DesktopProfileCard = () => (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => router.push("/profile" as any)}
+      style={sideCard}
+    >
+      <Text
+        style={{
+          fontWeight: "700",
+          fontSize: 13,
+          color: "#0f172a",
+          marginBottom: 14,
+        }}
+      >
+        My Profile
+      </Text>
+      <View style={{ alignItems: "center" }}>
+        <View style={{ position: "relative", marginBottom: 10 }}>
+          {myAvatar && !myProfileBroken ? (
+            <Image
+              source={{ uri: myAvatar }}
+              onError={() => setMyProfileBroken(true)}
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                borderWidth: 3,
+                borderColor: "#f1f5f9",
+                backgroundColor: "#e2e8f0",
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                borderWidth: 3,
+                borderColor: "#f1f5f9",
+                backgroundColor: "#e2e8f0",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ color: "#475569", fontSize: 18, fontWeight: "700" }}>
+                {(myDisplayName || "U").charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View
+            style={{
+              position: "absolute",
+              bottom: 1,
+              right: 1,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              backgroundColor: "#22c55e",
+              borderWidth: 2,
+              borderColor: "#fff",
+            }}
+          />
+        </View>
+        <Text style={{ fontWeight: "700", fontSize: 15, color: "#0f172a" }}>
+          {myDisplayName}
+        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            marginTop: 14,
+            paddingTop: 14,
+            borderTopWidth: 1,
+            borderTopColor: "#f8fafc",
+            width: "100%",
+          }}
+        >
+          {[
+            { label: "Posts", value: String(myPostCount) },
+            { label: "Friends", value: String(friendCount) },
+          ].map((s, i) => (
+            <View
+              key={s.label}
+              style={{
+                flex: 1,
+                alignItems: "center",
+                borderRightWidth: i === 0 ? 1 : 0,
+                borderRightColor: "#f8fafc",
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: "800", color: "#0f172a" }}>
+                {s.value}
+              </Text>
+              <Text style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                {s.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  // ─── Mobile: compact horizontal profile bar ──────────────────────────────────
+
+  const MobileProfileBar = () => (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => router.push("/profile" as any)}
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 16,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: "#f1f5f9",
+        marginBottom: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        shadowColor: "#94a3b8",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.07,
+        shadowRadius: 8,
+      }}
+    >
+      <View style={{ position: "relative" }}>
+        {myAvatar && !myProfileBroken ? (
+          <Image
+            source={{ uri: myAvatar }}
+            onError={() => setMyProfileBroken(true)}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              borderWidth: 2,
+              borderColor: "#f1f5f9",
+              backgroundColor: "#e2e8f0",
+            }}
+          />
+        ) : (
+          <View
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              borderWidth: 2,
+              borderColor: "#f1f5f9",
+              backgroundColor: "#e2e8f0",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: "#475569", fontSize: 16, fontWeight: "700" }}>
+              {(myDisplayName || "U").charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+        <View
+          style={{
+            position: "absolute",
+            bottom: 1,
+            right: 1,
+            width: 11,
+            height: 11,
+            borderRadius: 6,
+            backgroundColor: "#22c55e",
+            borderWidth: 2,
+            borderColor: "#fff",
+          }}
+        />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontWeight: "700", fontSize: 14, color: "#0f172a" }}>
+          {myDisplayName}
+        </Text>
+        <Text style={{ fontSize: 12, color: "#94a3b8", marginTop: 1 }}>
+          View my profile
+        </Text>
+      </View>
+
+      <View style={{ flexDirection: "row", gap: 16 }}>
+        {[
+          { label: "Posts", value: myPostCount },
+          { label: "Friends", value: friendCount },
+        ].map((s) => (
+          <View key={s.label} style={{ alignItems: "center" }}>
+            <Text style={{ fontSize: 15, fontWeight: "800", color: "#0f172a" }}>
+              {s.value}
+            </Text>
+            <Text style={{ fontSize: 10, color: "#94a3b8" }}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+    </TouchableOpacity>
+  );
+
+  // ─── Sidebar content (friends + requests, shared) ────────────────────────────
+
+  const SidebarFriendsCards = () => (
+    <>
+      {/* Friends Card — only show if there are friends */}
+      {friends.length > 0 && (
+      <View style={sideCard}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+          }}
+        >
+          <Text
+            style={{
+              fontWeight: "700",
+              fontSize: 13,
+              color: "#0f172a",
+            }}
+          >
+            Friends
+          </Text>
+          <TouchableOpacity onPress={() => router.push("/friends" as any)}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                color: "#94a3b8",
+              }}
+            >
+              See all {friendCount}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {friends.slice(0, SIDEBAR_LIMIT).map((f, i) => (
+          <TouchableOpacity
+            key={f._id || f.username}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/profile/${f.username}` as any)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              paddingVertical: 9,
+              borderBottomWidth:
+                i < Math.min(friends.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
+              borderBottomColor: "#f8fafc",
+            }}
+          >
+            <View style={{ position: "relative" }}>
+              <Image
+                source={{ uri: f.avatar }}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  borderWidth: 1.5,
+                  borderColor: f.online ? "#22c55e" : "#f1f5f9",
+                  backgroundColor: "#e2e8f0",
+                }}
+              />
+              {f.online && (
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 5,
+                    backgroundColor: "#22c55e",
+                    borderWidth: 1.5,
+                    borderColor: "#fff",
+                  }}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "600",
+                  color: "#0f172a",
+                }}
+              >
+                @{f.username}
+              </Text>
+              <Text style={{ fontSize: 11, color: "#94a3b8" }}>
+                {f.online ? "Online" : `${f.mutuals} mutual`}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        {friendCount > SIDEBAR_LIMIT && (
+          <TouchableOpacity
+            onPress={() => router.push("/friends" as any)}
+            style={{ marginTop: 10, alignItems: "center" }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                color: "#94a3b8",
+              }}
+            >
+              +{friendCount - SIDEBAR_LIMIT} more friends
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      )}
+
+      {/* Friend Requests Card */}
+      {requests.length > 0 && (
+        <View style={sideCard}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontWeight: "700",
+                fontSize: 13,
+                color: "#0f172a",
+              }}
+            >
+              Friend Requests
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: "#fce7f3",
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "700",
+                    color: "#be185d",
+                  }}
+                >
+                  {requests.length}
+                </Text>
+              </View>
+              {requests.length > SIDEBAR_LIMIT && (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push("/friends?tab=requests" as any)
+                  }
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "600",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    See all
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {requests.slice(0, SIDEBAR_LIMIT).map((req, i) => (
+            <View
+              key={req.requestId}
+              style={{
+                paddingVertical: 10,
+                borderBottomWidth:
+                  i < Math.min(requests.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
+                borderBottomColor: "#f8fafc",
+              }}
+            >
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push(`/profile/${req.username}` as any)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <Image
+                  source={{ uri: req.avatar }}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 17,
+                    borderWidth: 1.5,
+                    borderColor: "#f1f5f9",
+                    backgroundColor: "#e2e8f0",
+                  }}
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color: "#0f172a",
+                    flex: 1,
+                  }}
+                >
+                  @{req.username}
+                </Text>
+              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => handleAcceptRequest(req.requestId)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 7,
+                    borderRadius: 10,
+                    backgroundColor: "#0f172a",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: "#fff",
+                    }}
+                  >
+                    Accept
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleDeclineRequest(req.requestId)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 7,
+                    borderRadius: 10,
+                    backgroundColor: "#f1f5f9",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: "#64748b",
+                    }}
+                  >
+                    Decline
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </>
+  );
+
+  const SidebarContent = () => (
+    <>
+      <DesktopProfileCard />
+      <SidebarFriendsCards />
+    </>
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <WebLayout>
@@ -583,12 +1065,15 @@ export default function CommunityPage() {
     <WebLayout>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 60 }}
+        contentContainerStyle={{
+          paddingBottom: 60,
+          paddingHorizontal: isMobile ? 16 : 0,
+        }}
         style={{ flex: 1 }}
       >
         <View
           style={{
-            flexDirection: "row",
+            flexDirection: isMobile ? "column" : "row",
             gap: 24,
             alignItems: "flex-start",
             maxWidth: 860,
@@ -597,19 +1082,29 @@ export default function CommunityPage() {
           }}
         >
           {/* ── LEFT: Feed ─────────────────────────────────────────── */}
-          <View style={{ flex: 1, minWidth: 0, maxWidth: 520 }}>
+          <View style={{ flex: 1, minWidth: 0, maxWidth: isMobile ? undefined : 520 }}>
+
+            {/* Mobile: compact profile bar + friends/requests cards if data exists */}
+            {isMobile && (
+              <View style={{ marginBottom: 4 }}>
+                <MobileProfileBar />
+                {(friends.length > 0 || requests.length > 0) && <SidebarFriendsCards />}
+              </View>
+            )}
+
             <View
               style={{
-                flexDirection: "row",
-                alignItems: "center",
+                flexDirection: isMobile ? "column" : "row",
+                alignItems: isMobile ? "stretch" : "center",
                 justifyContent: "space-between",
-                marginBottom: 20,
+                marginBottom: 16,
+                gap: isMobile ? 10 : 0,
               }}
             >
               <View>
                 <Text
                   style={{
-                    fontSize: 26,
+                    fontSize: isMobile ? 22 : 26,
                     fontWeight: "800",
                     color: "#0f172a",
                     letterSpacing: -0.5,
@@ -627,10 +1122,11 @@ export default function CommunityPage() {
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
+                  justifyContent: "center",
                   backgroundColor: "#0f172a",
-                  paddingVertical: 10,
+                  paddingVertical: 12,
                   paddingHorizontal: 16,
-                  borderRadius: 100,
+                  borderRadius: 14,
                   gap: 6,
                   shadowColor: "#0f172a",
                   shadowOffset: { width: 0, height: 4 },
@@ -641,9 +1137,7 @@ export default function CommunityPage() {
                 <Text style={{ color: "#fff", fontSize: 17, lineHeight: 20 }}>
                   +
                 </Text>
-                <Text
-                  style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}
-                >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>
                   New Post
                 </Text>
               </TouchableOpacity>
@@ -656,7 +1150,7 @@ export default function CommunityPage() {
                 borderRadius: 12,
                 padding: 4,
                 marginBottom: 20,
-                alignSelf: "flex-start",
+                alignSelf: isMobile ? "stretch" : "flex-start",
               }}
             >
               {(
@@ -669,9 +1163,11 @@ export default function CommunityPage() {
                   key={tab.value}
                   onPress={() => setFilter(tab.value)}
                   style={{
+                    flex: isMobile ? 1 : undefined,
                     paddingHorizontal: 16,
                     paddingVertical: 8,
                     borderRadius: 10,
+                    alignItems: "center",
                     backgroundColor:
                       filter === tab.value ? "#fff" : "transparent",
                     shadowColor:
@@ -1032,405 +1528,20 @@ export default function CommunityPage() {
             })}
           </View>
 
-          {/* ── RIGHT: Sidebar ─────────────────────────────────────── */}
-          <View
-            style={{
-              width: 248,
-              flexShrink: 0,
-              position: "sticky",
-              top: 0,
-              alignSelf: "flex-start",
-            } as any}
-          >
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => router.push("/profile" as any)}
-              style={sideCard}
+          {/* ── RIGHT: Sidebar (desktop only) ──────────────────────── */}
+          {!isMobile && (
+            <View
+              style={{
+                width: 248,
+                flexShrink: 0,
+                position: "sticky",
+                top: 0,
+                alignSelf: "flex-start",
+              } as any}
             >
-              <Text
-                style={{
-                  fontWeight: "700",
-                  fontSize: 13,
-                  color: "#0f172a",
-                  marginBottom: 14,
-                }}
-              >
-                My Profile
-              </Text>
-              <View style={{ alignItems: "center" }}>
-                <View style={{ position: "relative", marginBottom: 10 }}>
-                  {myAvatar && !myProfileBroken ? (
-                    <Image
-                      source={{ uri: myAvatar }}
-                      onError={() => setMyProfileBroken(true)}
-                      style={{
-                        width: 60,
-                        height: 60,
-                        borderRadius: 30,
-                        borderWidth: 3,
-                        borderColor: "#f1f5f9",
-                        backgroundColor: "#e2e8f0",
-                      }}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 60,
-                        height: 60,
-                        borderRadius: 30,
-                        borderWidth: 3,
-                        borderColor: "#f1f5f9",
-                        backgroundColor: "#e2e8f0",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: "#475569",
-                          fontSize: 18,
-                          fontWeight: "700",
-                        }}
-                      >
-                        {(myDisplayName || "U").charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-
-                  <View
-                    style={{
-                      position: "absolute",
-                      bottom: 1,
-                      right: 1,
-                      width: 14,
-                      height: 14,
-                      borderRadius: 7,
-                      backgroundColor: "#22c55e",
-                      borderWidth: 2,
-                      borderColor: "#fff",
-                    }}
-                  />
-                </View>
-
-                <Text
-                  style={{
-                    fontWeight: "700",
-                    fontSize: 15,
-                    color: "#0f172a",
-                  }}
-                >
-                  {myDisplayName}
-                </Text>
-
-                <View
-                  style={{
-                    flexDirection: "row",
-                    marginTop: 14,
-                    paddingTop: 14,
-                    borderTopWidth: 1,
-                    borderTopColor: "#f8fafc",
-                    width: "100%",
-                  }}
-                >
-                  {[
-                    { label: "Posts", value: String(myPostCount) },
-                    { label: "Friends", value: String(friendCount) },
-                  ].map((s, i) => (
-                    <View
-                      key={s.label}
-                      style={{
-                        flex: 1,
-                        alignItems: "center",
-                        borderRightWidth: i === 0 ? 1 : 0,
-                        borderRightColor: "#f8fafc",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 17,
-                          fontWeight: "800",
-                          color: "#0f172a",
-                        }}
-                      >
-                        {s.value}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: "#94a3b8",
-                          marginTop: 2,
-                        }}
-                      >
-                        {s.label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            <View style={sideCard}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 14,
-                }}
-              >
-                <Text
-                  style={{
-                    fontWeight: "700",
-                    fontSize: 13,
-                    color: "#0f172a",
-                  }}
-                >
-                  Friends
-                </Text>
-                <TouchableOpacity onPress={() => router.push("/friends" as any)}>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "600",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    See all {friendCount}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {friends.slice(0, SIDEBAR_LIMIT).map((f, i) => (
-                <TouchableOpacity
-                  key={f._id || f.username}
-                  activeOpacity={0.7}
-                  onPress={() => router.push(`/profile/${f.username}` as any)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingVertical: 9,
-                    borderBottomWidth:
-                      i < Math.min(friends.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
-                    borderBottomColor: "#f8fafc",
-                  }}
-                >
-                  <View style={{ position: "relative" }}>
-                    <Image
-                      source={{ uri: f.avatar }}
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        borderWidth: 1.5,
-                        borderColor: f.online ? "#22c55e" : "#f1f5f9",
-                        backgroundColor: "#e2e8f0",
-                      }}
-                    />
-                    {f.online && (
-                      <View
-                        style={{
-                          position: "absolute",
-                          bottom: 0,
-                          right: 0,
-                          width: 10,
-                          height: 10,
-                          borderRadius: 5,
-                          backgroundColor: "#22c55e",
-                          borderWidth: 1.5,
-                          borderColor: "#fff",
-                        }}
-                      />
-                    )}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: "600",
-                        color: "#0f172a",
-                      }}
-                    >
-                      @{f.username}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: "#94a3b8" }}>
-                      {f.online ? "Online" : `${f.mutuals} mutual`}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-
-              {friendCount > SIDEBAR_LIMIT && (
-                <TouchableOpacity
-                  onPress={() => router.push("/friends" as any)}
-                  style={{ marginTop: 10, alignItems: "center" }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "600",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    +{friendCount - SIDEBAR_LIMIT} more friends
-                  </Text>
-                </TouchableOpacity>
-              )}
+              <SidebarContent />
             </View>
-
-            {requests.length > 0 && (
-              <View style={sideCard}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 14,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontWeight: "700",
-                      fontSize: 13,
-                      color: "#0f172a",
-                    }}
-                  >
-                    Friend Requests
-                  </Text>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <View
-                      style={{
-                        backgroundColor: "#fce7f3",
-                        paddingHorizontal: 8,
-                        paddingVertical: 2,
-                        borderRadius: 10,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "700",
-                          color: "#be185d",
-                        }}
-                      >
-                        {requests.length}
-                      </Text>
-                    </View>
-                    {requests.length > SIDEBAR_LIMIT && (
-                      <TouchableOpacity
-                        onPress={() =>
-                          router.push("/friends?tab=requests" as any)
-                        }
-                      >
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontWeight: "600",
-                            color: "#94a3b8",
-                          }}
-                        >
-                          See all
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-
-                {requests.slice(0, SIDEBAR_LIMIT).map((req, i) => (
-                  <View
-                    key={req.requestId}
-                    style={{
-                      paddingVertical: 10,
-                      borderBottomWidth:
-                        i < Math.min(requests.length, SIDEBAR_LIMIT) - 1 ? 1 : 0,
-                      borderBottomColor: "#f8fafc",
-                    }}
-                  >
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => router.push(`/profile/${req.username}` as any)}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 10,
-                        marginBottom: 10,
-                      }}
-                    >
-                      <Image
-                        source={{ uri: req.avatar }}
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
-                          borderWidth: 1.5,
-                          borderColor: "#f1f5f9",
-                          backgroundColor: "#e2e8f0",
-                        }}
-                      />
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontWeight: "600",
-                          color: "#0f172a",
-                          flex: 1,
-                        }}
-                      >
-                        @{req.username}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => handleAcceptRequest(req.requestId)}
-                        style={{
-                          flex: 1,
-                          paddingVertical: 7,
-                          borderRadius: 10,
-                          backgroundColor: "#0f172a",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: "600",
-                            color: "#fff",
-                          }}
-                        >
-                          Accept
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDeclineRequest(req.requestId)}
-                        style={{
-                          flex: 1,
-                          paddingVertical: 7,
-                          borderRadius: 10,
-                          backgroundColor: "#f1f5f9",
-                          alignItems: "center",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: "600",
-                            color: "#64748b",
-                          }}
-                        >
-                          Decline
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+          )}
         </View>
       </ScrollView>
 

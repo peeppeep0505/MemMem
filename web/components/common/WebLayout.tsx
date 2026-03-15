@@ -1,9 +1,13 @@
-import { View } from "react-native";
+import { View, ScrollView, useWindowDimensions } from "react-native";
 import Sidebar from "./Sidebar";
 import { useAppTheme } from "@/contexts/ThemeContext";
 
 export default function WebLayout({ children }: { children: React.ReactNode }) {
   const { theme } = useAppTheme();
+  const { width } = useWindowDimensions();
+
+  const isMobile = width < 768;
+  const contentPadding = isMobile ? 14 : 24;
 
   return (
     <View
@@ -15,15 +19,31 @@ export default function WebLayout({ children }: { children: React.ReactNode }) {
     >
       <Sidebar />
 
-      <View
+      <ScrollView
         style={{
           flex: 1,
-          padding: 24,
           backgroundColor: theme.background,
         }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingHorizontal: contentPadding,
+          paddingTop: isMobile ? 76 : 24,
+          paddingBottom: isMobile ? 18 : 24,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {children}
-      </View>
+        <View
+          style={{
+            flex: 1,
+            width: "100%",
+            maxWidth: isMobile ? "100%" : 1400,
+            alignSelf: "center",
+          }}
+        >
+          {children}
+        </View>
+      </ScrollView>
     </View>
   );
 }
