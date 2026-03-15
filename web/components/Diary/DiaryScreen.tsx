@@ -3,6 +3,8 @@ import WebLayout from "../common/WebLayout";
 import DiaryCalendar from "./DiaryCalendar";
 import { useAppTheme } from "@/contexts/ThemeContext";
 import { Fonts, Glyphs } from "@/constants/theme";
+import HeartFillGame from "./HeartFillGame";
+import FloatingHeartWidget from "./FloatingHeartWidget";
 
 export default function DiaryPage() {
   const { theme: C } = useAppTheme();
@@ -23,6 +25,7 @@ export default function DiaryPage() {
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
+<FloatingHeartWidget />
         <View
           style={{
             maxWidth: 720,
@@ -94,42 +97,6 @@ export default function DiaryPage() {
 
             {/* divider */}
             <View style={{ height: 1, backgroundColor: C.ruledLine, marginTop: 20, marginBottom: 4 }} />
-
-            {/* tag pills */}
-            {/* <View style={{ flexDirection: "row", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              {[
-                { icon: "📖", label: "Diary" },
-                { icon: "✅", label: "Todos" },
-                { icon: "🌸", label: "Community" },
-              ].map((tag) => (
-                <View
-                  key={tag.label}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 5,
-                    paddingHorizontal: 12,
-                    paddingVertical: 5,
-                    backgroundColor: C.tagPill,
-                    borderRadius: 100,
-                    borderWidth: 1,
-                    borderColor: C.border,
-                  }}
-                >
-                  <Text style={{ fontSize: 12 }}>{tag.icon}</Text>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: C.primaryStrong,
-                      fontWeight: "600",
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {tag.label}
-                  </Text>
-                </View>
-              ))}
-            </View> */}
           </View>
 
           {/* ── Calendar ── */}

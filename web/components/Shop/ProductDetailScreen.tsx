@@ -109,7 +109,21 @@ export default function ProductDetailScreen() {
   };
 
   const handleBack = () => {
-    router.back();
+    if (!id) {
+      router.push("/shop");
+      return;
+    }
+
+    router.push({
+      pathname: "/shop",
+      params: {
+        q: typeof q === "string" ? q : undefined,
+        category: parseCategoryParam(category) || undefined,
+        favId: id,
+        favAction: isFavorite ? "add" : "remove",
+        favTick: String(Date.now()),
+      },
+    });
   };
 
   return (
