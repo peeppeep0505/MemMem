@@ -572,7 +572,7 @@ export default function MyProfileScreen({
 
                   {/* About */}
                   <View style={{ marginBottom: 20 }}>
-                    <Text style={sectionLabel}>
+                    <Text style={sectionLabel} onPress={() => alert("About me!!")}>
                       {`${Glyphs.soft} About`}
                     </Text>
                     <Text style={{ color: C.mutedText, fontSize: 14, lineHeight: 22, fontFamily: F?.sans }}>

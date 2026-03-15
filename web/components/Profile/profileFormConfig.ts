@@ -36,7 +36,7 @@ export const PROFILE_FORM_CONFIG = [
     label: "Admin Code",
     type: "text",
     required: true,
-    min: 5,
+    min: 10,
     max: 50,
     placeholder: "Required only when role is admin",
     showWhen: {

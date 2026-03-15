@@ -7,12 +7,10 @@ const loginTracker = Object.create(null);
 const LOGIN_WINDOW_MS = 1 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 3;
 
-function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET is required");
-  }
-  return secret;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET is required");
 }
 
 function parseCookieToken(req) {
@@ -39,7 +37,7 @@ function parseToken(req) {
 }
 
 function signToken(id) {
-  return jwt.sign({ id }, getJwtSecret(), {
+  return jwt.sign({ id }, JWT_SECRET, {
     expiresIn: "7d",
   });
 }
@@ -67,7 +65,12 @@ function sendToken(user, statusCode, res) {
 }
 
 function getClientIp(req) {
-  return req.ip || req.headers["x-forwarded-for"] || req.connection?.remoteAddress || "unknown";
+  return (
+    req.ip ||
+    req.headers["x-forwarded-for"] ||
+    req.connection?.remoteAddress ||
+    "unknown"
+  );
 }
 
 function getTracker(ip) {
@@ -109,7 +112,10 @@ function loginRateLimiter(req, res, next) {
   const tracker = getTracker(ip);
 
   if (tracker.count >= MAX_LOGIN_ATTEMPTS) {
-    const retryAfter = Math.max(1, Math.ceil((tracker.resetAt - Date.now()) / 1000));
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((tracker.resetAt - Date.now()) / 1000)
+    );
 
     return res.status(429).json({
       message: "Too many login attempts. Please try again later.",
@@ -122,7 +128,6 @@ function loginRateLimiter(req, res, next) {
 
 function blacklistToken(token) {
   if (!token) return;
-
   tokenBlacklist.set(token, Date.now() + 7 * 24 * 60 * 60 * 1000);
 }
 
@@ -149,7 +154,7 @@ async function protect(req, res, next) {
       return res.status(401).json({ message: "Token has been invalidated" });
     }
 
-    const decoded = jwt.verify(token, getJwtSecret());
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     const currentUser = await User.findById(decoded.id).select("+passwordChangedAt");
 

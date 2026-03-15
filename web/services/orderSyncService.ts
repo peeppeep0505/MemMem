@@ -25,13 +25,72 @@ export type QueueOrder = {
 
 let syncPromise: Promise<boolean> | null = null;
 
-export async function loadOrderQueue(): Promise<QueueOrder[]> {
+function isQueueOrder(value: any): value is QueueOrder {
+  return !!value && typeof value === "object" && typeof value.id === "string" && Array.isArray(value.items);
+}
+
+function dedupeQueue(queue: QueueOrder[]): QueueOrder[] {
+  const map = new Map<string, QueueOrder>();
+
+  for (const entry of queue) {
+    if (!isQueueOrder(entry)) continue;
+
+    const prev = map.get(entry.id);
+    if (!prev) {
+      map.set(entry.id, entry);
+      continue;
+    }
+
+    const rank = (status: QueueOrder["status"]) =>
+      status === "synced" ? 3 : status === "syncing" ? 2 : 1;
+
+    map.set(entry.id, rank(entry.status) >= rank(prev.status) ? entry : prev);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+  );
+}
+
+async function readRawQueue(): Promise<QueueOrder[]> {
   const raw = await AsyncStorage.getItem(ORDER_QUEUE_KEY);
-  return raw ? JSON.parse(raw) : [];
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isQueueOrder) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function loadOrderQueue(): Promise<QueueOrder[]> {
+  const queue = dedupeQueue(await readRawQueue()).map((entry) => {
+    // ถ้าแอปถูกปิดระหว่าง syncing ให้กลับมา pending เพื่อ sync ต่อได้
+    if (entry.status === "syncing") {
+      return { ...entry, status: "pending" as const };
+    }
+    return entry;
+  });
+
+  await AsyncStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue));
+  return queue;
 }
 
 export async function saveOrderQueue(queue: QueueOrder[]) {
-  await AsyncStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(queue));
+  const normalized = dedupeQueue(queue);
+  await AsyncStorage.setItem(ORDER_QUEUE_KEY, JSON.stringify(normalized));
+}
+
+export async function markOrdersAsSyncedByIds(ids: string[]) {
+  if (!ids.length) return;
+
+  const idSet = new Set(ids);
+  const queue = await loadOrderQueue();
+  const nextQueue = queue.map((entry) =>
+    idSet.has(entry.id) ? { ...entry, status: "synced" as const } : entry
+  );
+  await saveOrderQueue(nextQueue);
 }
 
 export async function syncPendingOrders(): Promise<boolean> {
@@ -47,7 +106,7 @@ export async function syncPendingOrders(): Promise<boolean> {
     for (let i = 0; i < nextQueue.length; i += 1) {
       const entry = nextQueue[i];
 
-      if (entry.status === "synced" || entry.status === "syncing") continue;
+      if (entry.status === "synced") continue;
 
       nextQueue[i] = { ...entry, status: "syncing" };
       await saveOrderQueue(nextQueue);
